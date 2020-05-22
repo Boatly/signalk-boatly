@@ -1,0 +1,65 @@
+<mat-toolbar color="primary">
+   <span>Boatly Passage Logger</span>
+</mat-toolbar>
+
+<div *ngIf="passages && passages.length == 0">
+   There are no recorded passages to upload.
+</div>
+
+<section class="mat-typography" style="margin-left: 20px; margin-top: 20px">
+<div>
+  <h2>Status</h2>
+  <h2 class="mat-h2">These quick brown foxes jump over the lazy dog.</h2>
+  <p class="mat-body">The quick brown fox jumps over the lazy dog.</p>
+</div>
+
+<div *ngIf="passages && passages.length > 0">
+
+   <mat-list>
+      <div *ngFor="let passage of passages">
+         <mat-list-item>
+            <p *ngIf="passage.status == 'Uploading' || passage.status == 'Completed' || passage.status == 'Queued' || passage.status == 'Failed'" style="margin-right: 20px">
+               {{ passage.start | date : 'EEEE, MMMM d'}} from
+               {{passage.start | date : 'HH:mm'}} to {{passage.end | date : 'HH:mm'}}</p>
+
+            <p *ngIf="passage.status == 'Recording'" style="margin-right: 20px">
+               {{ passage.start | date : 'EEEE, MMMM d'}} at
+               {{passage.start | date : 'HH:mm'}}</p>
+
+            <mat-chip-list *ngIf="!passage.end">
+               <mat-chip color="accent"  style="width: 100px" selected>{{recording}}</mat-chip>
+            </mat-chip-list>
+
+            <mat-chip-list *ngIf="passage.status == 'Uploading' || passage.status == 'Queued'">
+               <mat-chip color="primary" selected>{{passage.status}}</mat-chip>
+            </mat-chip-list>
+
+            <mat-chip-list *ngIf="passage.status == 'Failed'">
+               <mat-chip color="warn" selected>{{passage.status}}</mat-chip>
+            </mat-chip-list>
+
+
+            <button *ngIf="passage.status == 'Recording'" style="margin-left: 10px" mat-raised-button color="accent" (click)="finishPassage(passage)">
+               Finish
+            </button>
+
+            <button *ngIf="passage.status == 'Completed'" mat-raised-button (click)="processPassage(passage)">
+               Upload
+            </button>
+
+            <button *ngIf="passage.status == 'Failed'" style="margin-left: 10px" mat-raised-button (click)="processPassage(passage)">
+               Retry
+            </button>
+
+            <button *ngIf="passage.status == 'Completed' || passage.status == 'Failed'" style="margin-left: 10px" mat-raised-button color="warn"
+               (click)="discardPassage(passage)">
+               Discard
+            </button>
+
+            <mat-divider></mat-divider>
+
+         </mat-list-item>
+      </div>
+   </mat-list>
+</div>
+</section>

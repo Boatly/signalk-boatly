@@ -25,8 +25,9 @@ export module PositionHandler {
 
   let app: any
   let db: any
+  let status = ''
 
-  export async function start(_app: any, props: any) {
+  export function start(_app: any, props: any) {
     app = _app
 
     app.setProviderStatus('Start Up');
@@ -34,16 +35,18 @@ export module PositionHandler {
     app.debug('**** STARTING UP ****')
 
     // Create the database
-    await createDatabase()
+    createDatabase()
 
     // On startup reload passage start time and last position report
-    passageStartTime = await getPassageStart()
+    passageStartTime = getPassageStart()
 
     if (passageStartTime) {
       app.debug(`Existing passage found: ${passageStartTime}`)
-      lastPositionReport = await getLastPR()
+      lastPositionReport = getLastPR()
       app.debug(`Last position report loaded: ${JSON.stringify(lastPositionReport)}`)
     }
+
+    app.setProviderStatus('Started & waiting for position reports');
   }
 
   // Called when plugin is stopped
@@ -53,13 +56,11 @@ export module PositionHandler {
     // app.debug('** Database Closed **')
   }
 
-  export function onPositionReport(pr: any) {
-    // Exit if database not initialsed
-    if (!db.ready) {
-      app.debug('* Database not ready!')
-      return
-    }
+  export function getStatus(): string {
+    return this.status
+  }
 
+  export function onPositionReport(pr: any) {
     // Ignore if HDOP > 5 or no position available
     if ((pr.lat === undefined || pr.lon === undefined || pr.sog === undefined) || (pr.hdop !== undefined && pr.hdop > 5)) {
 
@@ -91,18 +92,20 @@ export module PositionHandler {
     // If vessel moved >= 10 m since last position report
     if (!underway) {
       if (distanceMoved >= 10) {
-        app.setProviderStatus(`Vessel Underway ${new Date(pr.time).toISOString()}`)
-        app.debug(`** Vessel Underway ${pr.time} **`)
+        this.status = 'Movement detected - recording'
+        app.setProviderStatus(`Movement detected - started recording at ${new Date(pr.time).toISOString()}`)
+        app.debug(`Movement detected - started recording at ${new Date(pr.time).toISOString()}`)
         underway = true
       } else if (!lastPositionReport) {
         // Latch in first position report which is the base reference for the start of the passage
-        app.setProviderStatus(`First Position Determined`)
-        app.debug(`** First Position Determined **`)
+        this.status = 'Initial position determined - waiting for vessel to move'
+        app.setProviderStatus(`Initial Position Determined: ${pr.lat, pr.lon}`)
+        app.debug(`Initial Position Determined: ${pr.lat, pr.lon}`)
         lastPositionReport = pr
         return
       } else {
         // Vessel still stopped at the same position - wait until it moves
-        app.debug(`- Stationary, moved: ${distanceMoved}`)
+        app.debug(`Vessel moved: ${distanceMoved}`)
         return
       }
     }
@@ -117,7 +120,6 @@ export module PositionHandler {
       // Vessel has moved since last position report
       writePositionReportToDB(pr)
       lastPositionReport = pr
-      app.setProviderStatus(`Position report logged: ${new Date(pr.time).toISOString()}`)
       app.debug(`Position report logged: ${pr.time}`)
     }
 
@@ -144,15 +146,22 @@ export module PositionHandler {
     if (distanceMoved < 10) {
       const elapsedMins = (pr.time.valueOf() - lastPositionReport.time.valueOf()) / 60000
 
-      app.setProviderStatus(`Stopped for: ${Math.round(elapsedMins * 100) / 100} minutes`)
       app.debug(`** Stopped for: ${elapsedMins} minutes`)
 
+      if (elapsedMins >= 1) {
+        this.status = 'Vessel stopped'
+        app.setProviderStatus(`Stopped for: ${Math.round(elapsedMins * 100) / 100} minutes`)
+      }
+
       if (elapsedMins >= MINUTES_STOPPED_END_PASSAGE) {
+        app.setProviderStatus(`End of passage detected`)
         app.debug(`*** END OF PASSAGE DETECTED ***`)
 
         // Write to database to close passage
         endPassage(pr.time.valueOf())
       }
+    } else {
+      this.status = 'Movement detected - recording'
     }
 
   }
@@ -166,12 +175,13 @@ export module PositionHandler {
   }
 
   // Create SQLite Database if it doesn't exist
-  async function createDatabase() {
+  function createDatabase() {
     const dbFile = require('path').join(app.getDataDirPath(), 'boatly.db')
-    app.debug(`** Database path: ${dbFile}`)
     db = new sqlite(dbFile)
     db.prepare("CREATE TABLE IF NOT EXISTS positionreports (time TEXT, lat REAL, lon REAL, sog REAL, cog INTEGER, tws REAL, twa INTEGER, twd INTEGER)").run()
     db.prepare("CREATE TABLE IF NOT EXISTS passages (start TEXT, end TEXT, status TEXT)").run()
+
+    app.debug(`** Database path: ${dbFile}`)
   }
 
   // Write position report to the DB
@@ -199,13 +209,17 @@ export module PositionHandler {
   }
 
   // Get the start time of the current passage being recorded
-  async function getPassageStart() {
+  function getPassageStart() {
     const row = db.prepare('SELECT start FROM passages WHERE end IS NULL').get()
     return row ? row.start : row
   }
 
-  async function getLastPR() {
-    const row = await db.prepare('SELECT * FROM positionreports ORDER BY time DESC LIMIT 1').get()
+  export function getPositionReportCount(): number {
+    return db.prepare('SELECT count(*) FROM positionreports').pluck().get()
+  }
+
+  function getLastPR() {
+    const row = db.prepare('SELECT * FROM positionreports ORDER BY time DESC LIMIT 1').get()
 
     if (row) {
       return { time: row.time, lat: row.lat, lon: row.lon, cog: row.cog, sog: row.sog, tws: row.tws, twa: row.twa, twd: row.twd }

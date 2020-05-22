@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { SignalKClient } from 'signalk-client-angular';
 import { HttpParams, HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { catchError } from 'rxjs/operators';
@@ -10,22 +10,45 @@ import { map, delay, retryWhen, take, timeout } from 'rxjs/operators';
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.scss']
 })
-export class AppComponent {
+export class AppComponent implements OnInit, OnDestroy {
   title = 'signalk-boatly';
   repeat = 0
   passages = null
   public recording = 'Recording'
   authToken = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0YjM2YWZjOC01MjA1LTQ5YzEtYWYxNi00ZGM2Zjk2ZGI5ODIiLCJpc3MiOiJCb2F0bHkuY29tIiwiaWF0IjoxNTgxMzY1NDc4fQ.NmEmiN3OFtALR8BWPM3m6QxjKC6AloXNaoM4jnLfO70'
 
-  constructor(
-    private sk: SignalKClient, 
-    private http: HttpClient
-    ) {
+  status = ''
+  prcount = 0
+  intervalID
+
+  constructor(private sk: SignalKClient, private http: HttpClient) {}
+
+  ngOnInit() {
     this.sk.connect('localhost', 3000, false)
-      .then(r => { 
-        this.getPassages()        
-      })
-      .catch(e => { })           
+    .then(r => {
+      this.getStatus()
+      this.getPassages()
+      this.intervalID = setInterval(() => this.getStatus(), 1000)
+    })
+    .catch(e => { })
+  }
+
+  ngOnDestroy() {
+    clearInterval(this.intervalID)
+  }
+
+  getStatus() {
+    this.sk.api.get('self/status').subscribe(
+      (response: any) => {
+        this.status = response.status
+      }
+    )
+
+    this.sk.api.get('self/prcount').subscribe(
+      (response: any) => {
+        this.prcount = response.count
+      }
+    )
   }
 
   // Retrieve a list of passages that require processing
@@ -37,7 +60,7 @@ export class AppComponent {
     } else {
       this.repeat += 1
     }
-    
+
     this.sk.api.get('vessels/self/log').subscribe(
       (response: any) => {
         this.passages = response
@@ -53,9 +76,9 @@ export class AppComponent {
     );
   }
 
-  processPassage(passage: any) {   
+  processPassage(passage: any) {
     this.sk.api.post('vessels/self/process', {start: passage.start, end: passage.end}).subscribe(
-      (response: any) => {        
+      (response: any) => {
         console.log(response.status)
         passage.status = response.status
         // this.getPassages()
@@ -66,7 +89,7 @@ export class AppComponent {
     )
   }
 
-  discardPassage(passage: any) {    
+  discardPassage(passage: any) {
     this.sk.api.post('vessels/self/discard', {start: passage.start, end: passage.end}).subscribe(
       (response: any) => {
         console.log(response.status)
@@ -79,12 +102,12 @@ export class AppComponent {
     )
   }
 
-  finishPassage(passage: any) {    
+  finishPassage(passage: any) {
     this.sk.api.post('vessels/self/finish', {}).subscribe(
       (response: any) => {
         console.log(response.status)
         passage.end = new Date().toISOString()
-        passage.status = response.status        
+        passage.status = response.status
       },
       error => {
         console.log(error)
@@ -93,7 +116,7 @@ export class AppComponent {
   }
 
   getS3SignedURLForImport(fileName: string) {
-    
+
     const httpOptions = {
       headers: new HttpHeaders({'Authorization': this.authToken}),
       params: new HttpParams().set('file-name', fileName)

@@ -42,13 +42,13 @@ export default function (app: any) {
      * Plugin Startup Code - executes when the plugin starts up or restarts
      *
      ***********************************************************************/
-    start: async function (props: any) {
+    start: function (props: any) {
 
       try {
         authToken = props.authtoken
 
         // Start the passage processing loop
-        await PositionHandler.start(app, props)
+        PositionHandler.start(app, props)
 
         // Subscribe to position reports - receive every 1 second by default
         // Subscribe to each delta required and combine them into a single position report
@@ -94,24 +94,24 @@ export default function (app: any) {
     signalKApiRoutes: function (router) {
 
       // Return a list of passages that need processing
-      const logHandler = async function (req: any, res: any, next: any) {
+      const logHandler = function (req: any, res: any, next: any) {
         // Check if queued passages queued are completed and remove from passages list
         removeCompletedPassages()
 
-        const passages = await PositionHandler.getPassages()
+        const passages = PositionHandler.getPassages()
 
         res.type('application/json')
         res.json(passages)
       }
 
       // Add the passage to the queue of passages to process
-      const processHandler = async function (req: any, res: any, next: any) {
+      const processHandler = function (req: any, res: any, next: any) {
         const start = req.body.start
         const end = req.body.end
 
         app.debug(`Queing passage ${new Date(start).toISOString()} - ${new Date(end).toISOString()}`)
 
-        await PositionHandler.setPassageStatus(start, 'Uploading')
+        PositionHandler.setPassageStatus(start, 'Uploading')
 
         jobQueue.add({ start: start, end: end, path: app.getDataDirPath() })
 
@@ -119,18 +119,18 @@ export default function (app: any) {
         res.json({ status: 'Uploading' })
       }
 
-      const discardHandler = async function (req: any, res: any, next: any) {
+      const discardHandler = function (req: any, res: any, next: any) {
         const start = req.body.start
         const end = req.body.end
 
-        await PositionHandler.deletePassage(start, end)
+        PositionHandler.deletePassage(start, end)
 
         res.type('application/json')
         res.json({ status: 'Deleted' })
       }
 
       // Closes off the current passage being recorded
-      const finishHandler = async function (req: any, res: any, next: any) {
+      const finishHandler = function (req: any, res: any, next: any) {
         PositionHandler.endPassage(Date.now().valueOf())
 
         res.type('application/json')
@@ -138,13 +138,13 @@ export default function (app: any) {
       }
 
       // TODO - Read redis store to get token
-      const isLoggedInHandler = async function (req: any, res: any, next: any) {
+      const isLoggedInHandler = function (req: any, res: any, next: any) {
         res.type('application/json')
         res.json({ loggedin: false })
       }
 
       // Get auth token from Boatly
-      const loginHandler = async function (req: any, res: any, next: any) {
+      const loginHandler = function (req: any, res: any, next: any) {
         axios.post(`${baseurl}/authenticate`, req)
           .then((response: any) => {
             app.debug(`JWT: ${req.JWT}`)
@@ -159,6 +159,18 @@ export default function (app: any) {
             res.type('application/json')
             res.json({ status: 'Failed' })
           })
+      }
+
+      const statusHandler = function(req: any, res: any, next: any) {
+        const status = PositionHandler.getStatus()
+        res.type('application/json')
+        res.json({status: status})
+      }
+
+      const positionReportCountHandler = function(req: any, res: any, next: any) {
+        const count = PositionHandler.getPositionReportCount()
+        res.type('application/json')
+        res.json({count: count})
       }
 
       // Log into Boatly, returns an AuthToken used to upload and queue passages
@@ -191,6 +203,9 @@ export default function (app: any) {
       router.post('/vessels/self/finish', finishHandler)
       router.post('/vessels/' + app.selfId + '/finish', finishHandler)
 
+      router.get('/self/status', statusHandler)
+      router.get('/self/prcount', positionReportCountHandler)
+
       return router
     },
 
@@ -218,13 +233,13 @@ export default function (app: any) {
 
   return plugin
 
-  async function removeCompletedPassages() {
+  function removeCompletedPassages() {
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': authToken
     }
 
-    const queuedPassages = await PositionHandler.getQueuedPassages()
+    const queuedPassages = PositionHandler.getQueuedPassages()
 
     queuedPassages.forEach((passage: any) => {
       // Check if the passage exists in boatly

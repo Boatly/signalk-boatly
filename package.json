@@ -1,6 +1,6 @@
 {
   "name": "signalk-boatly",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A plugin that records sailing passages and uploads them to Boatly - https://wwww.boatly.com",
   "license": "ISC",
   "main": "index.js",

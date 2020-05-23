@@ -17,14 +17,15 @@ export class AppComponent implements OnInit, OnDestroy {
   public recording = 'Recording'
   authToken = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0YjM2YWZjOC01MjA1LTQ5YzEtYWYxNi00ZGM2Zjk2ZGI5ODIiLCJpc3MiOiJCb2F0bHkuY29tIiwiaWF0IjoxNTgxMzY1NDc4fQ.NmEmiN3OFtALR8BWPM3m6QxjKC6AloXNaoM4jnLfO70'
 
-  status = ''
-  prcount = 0
+  status = null
+  prcount = null
   intervalID
 
   constructor(private sk: SignalKClient, private http: HttpClient) {}
 
   ngOnInit() {
-    this.sk.connect('localhost', 3000, false)
+    // TODO - read host from the server
+    this.sk.connect('freespirits-pi', 3000, false)
     .then(r => {
       this.getStatus()
       this.getPassages()

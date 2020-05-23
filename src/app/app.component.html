@@ -7,8 +7,13 @@
 </div>
 
 <section class="mat-typography" style="margin-left: 20px; margin-top: 20px">
-<div>
+
+  <div *ngIf='status != null'>
   <h2>{{status}} : {{prcount}} position reports recorded</h2>
+</div>
+
+<div *ngIf='status == null'>
+  <h2>Connecting...</h2>
 </div>
 
 <div *ngIf="passages && passages.length > 0">

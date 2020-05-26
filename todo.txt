@@ -1,0 +1,16 @@
+API:
+- endpoint to return database path
+- endpoint to download gpx
+- endpoint to delete processed passages
+- endpoint to re-queue failed passages
+- check if Internet connection available before processing
+- test removing internet partway through processing
+- Add Boatly username and password to schema
+- Get UserID from login response
+- Handle login error
+- IsLoggedIn endpoint
+
+Frontend:
+- Handle all statuses : 'creategpx' | 'getpsurl' | 'uploads3' | 'queue' | 'creategpx - failed' | 'getpsurl - failed' | 'uploads3 - failed' | 'queue - failed'
+- Fix bug on count of position reports
+- Fix bug: http://localhost:3000/signalk/v1/api/self/status

@@ -1,68 +1,61 @@
 <mat-toolbar color="primary">
-   <span>Boatly Passage Logger</span>
+  <span>Boatly Passage Logger</span>
 </mat-toolbar>
 
-<div *ngIf="passages && passages.length == 0">
-   There are no recorded passages to upload.
-</div>
+<div class="container">
 
-<section class="mat-typography" style="margin-left: 20px; margin-top: 20px">
+  <mat-card>
+    <mat-card-title>{{statusTitle}}</mat-card-title>
+    <mat-card-subtitle>{{status.description}}</mat-card-subtitle>
+    <mat-card-content>{{additionalInfo}}</mat-card-content>
+    <button *ngIf="(status.status == 'RECORDING') || (status.status == 'STOPPED')" mat-raised-button color="primary" (click)="finishPassage()">Finish</button>
+  </mat-card>
 
-  <div *ngIf='status != null'>
-  <h2>{{status}} : {{prcount}} position reports recorded</h2>
-</div>
+  <mat-card style="margin-top: 15px;">
+    <mat-card-title>Recorded Passages</mat-card-title>
+    <div *ngIf="passages && passages.length > 0">
 
-<div *ngIf='status == null'>
-  <h2>Connecting...</h2>
-</div>
-
-<div *ngIf="passages && passages.length > 0">
-
-   <mat-list>
-      <div *ngFor="let passage of passages">
-         <mat-list-item>
-            <p *ngIf="passage.status == 'Uploading' || passage.status == 'Completed' || passage.status == 'Queued' || passage.status == 'Failed'" style="margin-right: 20px">
-               {{ passage.start | date : 'EEEE, MMMM d'}} from
-               {{passage.start | date : 'HH:mm'}} to {{passage.end | date : 'HH:mm'}}</p>
-
-            <p *ngIf="passage.status == 'Recording'" style="margin-right: 20px">
-               {{ passage.start | date : 'EEEE, MMMM d'}} at
-               {{passage.start | date : 'HH:mm'}}</p>
-
-            <mat-chip-list *ngIf="!passage.end">
-               <mat-chip color="accent"  style="width: 100px" selected>{{recording}}</mat-chip>
-            </mat-chip-list>
+      <mat-list>
+        <div *ngFor="let passage of passages">
+          <mat-list-item *ngIf="passage.status != 'Recording'">
+            <div *ngIf="passage.status == 'Uploading' || passage.status == 'Completed' || passage.status == 'Queued' || passage.status == 'Failed'"
+              style="margin-right: 20px">
+              {{ passage.start | date : 'MMMM d HH:mm'}} to {{passage.end | date : 'MMMM d HH:mm'}}</div>
 
             <mat-chip-list *ngIf="passage.status == 'Uploading' || passage.status == 'Queued'">
-               <mat-chip color="primary" selected>{{passage.status}}</mat-chip>
+              <mat-chip color="primary" selected>{{passage.status}}</mat-chip>
             </mat-chip-list>
 
             <mat-chip-list *ngIf="passage.status == 'Failed'">
-               <mat-chip color="warn" selected>{{passage.status}}</mat-chip>
+              <mat-chip color="warn" selected>{{passage.status}}</mat-chip>
             </mat-chip-list>
 
-
-            <button *ngIf="passage.status == 'Recording'" style="margin-left: 10px" mat-raised-button color="accent" (click)="finishPassage(passage)">
-               Finish
-            </button>
-
             <button *ngIf="passage.status == 'Completed'" mat-raised-button (click)="processPassage(passage)">
-               Upload
+              Upload
             </button>
 
-            <button *ngIf="passage.status == 'Failed'" style="margin-left: 10px" mat-raised-button (click)="processPassage(passage)">
-               Retry
+            <button *ngIf="passage.status == 'Failed'" style="margin-left: 10px" mat-raised-button
+              (click)="processPassage(passage)">
+              Retry
             </button>
 
-            <button *ngIf="passage.status == 'Completed' || passage.status == 'Failed'" style="margin-left: 10px" mat-raised-button color="warn"
-               (click)="discardPassage(passage)">
-               Discard
+            <button *ngIf="passage.status == 'Completed' || passage.status == 'Failed'" style="margin-left: 10px"
+              mat-raised-button color="warn" (click)="discardPassage(passage)">
+              Discard
             </button>
+
+            <button mat-button style="margin-left: 10px">Download GPX file</button>
 
             <mat-divider></mat-divider>
 
-         </mat-list-item>
-      </div>
-   </mat-list>
+          </mat-list-item>
+        </div>
+      </mat-list>
+    </div>
+  </mat-card>
+
+  <div *ngIf="passages && passages.length == 0">
+    There are no recorded passages to upload.
+  </div>
+
 </div>
-</section>

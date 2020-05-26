@@ -1,9 +1,10 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit, isDevMode } from '@angular/core';
 import { SignalKClient } from 'signalk-client-angular';
 import { HttpParams, HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { catchError } from 'rxjs/operators';
 import { Observable, of, throwError, concat } from 'rxjs';
 import { map, delay, retryWhen, take, timeout } from 'rxjs/operators';
+import { THIS_EXPR } from '@angular/compiler/src/output/output_ast';
 
 @Component({
   selector: 'app-root',
@@ -11,57 +12,101 @@ import { map, delay, retryWhen, take, timeout } from 'rxjs/operators';
   styleUrls: ['./app.component.scss']
 })
 export class AppComponent implements OnInit, OnDestroy {
+
+  private DEV_SERVER = {
+    host: 'localhost',
+    port: 3000,
+    ssl: false
+  };
+
+  hostName: string;
+  hostPort: number;
+  hostSSL: boolean;
+  host = '';
+  devMode = isDevMode()
+
   title = 'signalk-boatly';
   repeat = 0
   passages = null
-  public recording = 'Recording'
+
   authToken = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0YjM2YWZjOC01MjA1LTQ5YzEtYWYxNi00ZGM2Zjk2ZGI5ODIiLCJpc3MiOiJCb2F0bHkuY29tIiwiaWF0IjoxNTgxMzY1NDc4fQ.NmEmiN3OFtALR8BWPM3m6QxjKC6AloXNaoM4jnLfO70'
 
   status = null
-  prcount = null
+  statusTitle = ''
+  additionalInfo = null
+
   intervalID
 
-  constructor(private sk: SignalKClient, private http: HttpClient) {}
+  constructor(private sk: SignalKClient, private http: HttpClient) {
+    // Construct host for connection
+    this.hostName = (this.devMode && this.DEV_SERVER.host) ? this.DEV_SERVER.host : window.location.hostname;
+    this.hostPort = (this.devMode && this.DEV_SERVER.port) ? this.DEV_SERVER.port : parseInt(window.location.port);
+    this.hostSSL = (window.location.protocol == 'https:' || (this.devMode && this.DEV_SERVER.ssl)) ? true : false;
+    this.host = (this.devMode) ? `${this.hostSSL ? 'https:' : 'http:'}//${this.hostName}:${this.hostPort}` : `${window.location.protocol}//${window.location.host}`;
+  }
 
   ngOnInit() {
-    // TODO - read host from the server
-    this.sk.connect('freespirits-pi', 3000, false)
-    .then(r => {
+    console.log(`HOST: ${this.host}`)
+
+    this.sk.connect(this.hostName, this.hostPort, this.hostSSL).then(r => {
+      this.status = `Connected to SignalK Server ${this.host}`
+      console.log(this.status)
       this.getStatus()
       this.getPassages()
       this.intervalID = setInterval(() => this.getStatus(), 1000)
     })
-    .catch(e => { })
+      .catch(e => {
+        this.status = `Failed to connect to SignalK Server ${this.host}`
+        console.log(this.status)
+      })
   }
 
   ngOnDestroy() {
+    this.sk.disconnect()
     clearInterval(this.intervalID)
   }
 
   getStatus() {
     this.sk.api.get('self/status').subscribe(
       (response: any) => {
-        this.status = response.status
-      }
-    )
-
-    this.sk.api.get('self/prcount').subscribe(
-      (response: any) => {
-        this.prcount = response.count
+        this.status = response
+        this.decodeStatus()
       }
     )
   }
 
+  decodeStatus() {
+    switch (this.status.status) {
+
+      case 'RECORDING':
+        this.statusTitle = 'Recording'
+        this.additionalInfo = `${this.status.prs} positions recorded`
+        break;
+
+      case 'WAITING_INITIAL_POSITION':
+        this.statusTitle = 'Waiting'
+        this.additionalInfo = null
+        break;
+
+      case 'READY':
+        this.statusTitle = 'Ready'
+        this.additionalInfo = null
+        break;
+
+      case 'STOPPED':
+        this.statusTitle = 'Vessel Stopped'
+        const minutes = Math.floor(this.status.stoppedmins)
+        const seconds = Math.round(this.status.stoppedmins % 1 * 60);
+        this.additionalInfo = `Stopped for ${minutes} minute(s) ${seconds} seconds`
+        break;
+
+      default:
+        break;
+    }
+  }
+
   // Retrieve a list of passages that require processing
   getPassages() {
-    this.recording = 'Recording' + '.'.repeat(this.repeat)
-
-    if (this.repeat > 2) {
-      this.repeat = 0;
-    } else {
-      this.repeat += 1
-    }
-
     this.sk.api.get('vessels/self/log').subscribe(
       (response: any) => {
         this.passages = response
@@ -78,7 +123,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   processPassage(passage: any) {
-    this.sk.api.post('vessels/self/process', {start: passage.start, end: passage.end}).subscribe(
+    this.sk.api.post('vessels/self/process', { start: passage.start, end: passage.end }).subscribe(
       (response: any) => {
         console.log(response.status)
         passage.status = response.status
@@ -91,7 +136,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   discardPassage(passage: any) {
-    this.sk.api.post('vessels/self/discard', {start: passage.start, end: passage.end}).subscribe(
+    this.sk.api.post('vessels/self/discard', { start: passage.start, end: passage.end }).subscribe(
       (response: any) => {
         console.log(response.status)
         passage.status = response.status
@@ -103,12 +148,13 @@ export class AppComponent implements OnInit, OnDestroy {
     )
   }
 
-  finishPassage(passage: any) {
+  finishPassage() {
     this.sk.api.post('vessels/self/finish', {}).subscribe(
       (response: any) => {
-        console.log(response.status)
-        passage.end = new Date().toISOString()
-        passage.status = response.status
+        this.getPassages()
+        // console.log(response.status)
+        // passage.end = new Date().toISOString()
+        // passage.status = response.status
       },
       error => {
         console.log(error)
@@ -119,7 +165,7 @@ export class AppComponent implements OnInit, OnDestroy {
   getS3SignedURLForImport(fileName: string) {
 
     const httpOptions = {
-      headers: new HttpHeaders({'Authorization': this.authToken}),
+      headers: new HttpHeaders({ 'Authorization': this.authToken }),
       params: new HttpParams().set('file-name', fileName)
     };
 

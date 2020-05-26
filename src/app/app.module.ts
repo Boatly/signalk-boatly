@@ -11,6 +11,7 @@ import {MatToolbarModule} from '@angular/material'
 import {MatButtonModule} from '@angular/material/button';
 import {MatProgressSpinnerModule} from '@angular/material/progress-spinner';
 import {MatChipsModule} from '@angular/material/chips'
+import {MatCardModule} from '@angular/material/card';
 
 import { SignalKClientModule } from 'signalk-client-angular';
 
@@ -28,6 +29,7 @@ import { SignalKClientModule } from 'signalk-client-angular';
     MatButtonModule,
     MatProgressSpinnerModule,
     MatChipsModule,
+    MatCardModule,
     SignalKClientModule,
   ],
   providers: [],

@@ -7,11 +7,9 @@
 import { combineWith } from 'baconjs'
 import { Util } from './util'
 import { PositionHandler } from './position_handler'
+import { PassageProcessor } from './passage_processor';
 
 const axios = require('axios').default
-var Queue = require('bull');
-
-var jobQueue = new Queue('boatly', 'redis://127.0.0.1:6379');
 
 interface Plugin {
   start: (app: any) => void,
@@ -32,8 +30,9 @@ export default function (app: any) {
   const baseurl = 'https://boatly-api.herokuapp.com/v1'
 
   let unsubscribe: () => void
-  let lastMessages: [string, string, string] = ['', '', '']
   let authToken = ''
+  let dbPath = ''
+  let passageProcessor: PassageProcessor
 
   const plugin: Plugin = {
 
@@ -46,9 +45,13 @@ export default function (app: any) {
 
       try {
         authToken = props.authtoken
+        dbPath = require('path').join(app.getDataDirPath(), 'boatly.db')
+
+        // Start the passage processor queue
+        passageProcessor = new PassageProcessor()
 
         // Start the passage processing loop
-        PositionHandler.start(app, props)
+        PositionHandler.start(app, props, dbPath)
 
         // Subscribe to position reports - receive every 1 second by default
         // Subscribe to each delta required and combine them into a single position report
@@ -111,9 +114,12 @@ export default function (app: any) {
 
         app.debug(`Queing passage ${new Date(start).toISOString()} - ${new Date(end).toISOString()}`)
 
-        PositionHandler.setPassageStatus(start, 'Uploading')
+        PositionHandler.setPassageStatus(start, 'creategpx')
 
-        jobQueue.add({ start: start, end: end, path: app.getDataDirPath() })
+        const path = app.getDataDirPath()
+        const filename = start.replace(/\-/g, '').replace(/\:/g, '').replace(/\./g, '') + '.gpx'
+
+        passageProcessor.queuePassage({ start: start, end: end, gpxpath: `${path}/${filename}`, dbPath: dbPath, authToken: authToken,gpxfilename: filename })
 
         res.type('application/json')
         res.json({ status: 'Uploading' })
@@ -162,15 +168,14 @@ export default function (app: any) {
       }
 
       const statusHandler = function(req: any, res: any, next: any) {
-        const status = PositionHandler.getStatus()
+        const result = PositionHandler.getStatus()
         res.type('application/json')
-        res.json({status: status})
+        res.json(result)
       }
 
-      const positionReportCountHandler = function(req: any, res: any, next: any) {
-        const count = PositionHandler.getPositionReportCount()
-        res.type('application/json')
-        res.json({count: count})
+      // TODO
+      const downloadHandler = function(req: any, res: any, next: any) {
+        // res.download()
       }
 
       // Log into Boatly, returns an AuthToken used to upload and queue passages
@@ -203,9 +208,11 @@ export default function (app: any) {
       router.post('/vessels/self/finish', finishHandler)
       router.post('/vessels/' + app.selfId + '/finish', finishHandler)
 
+      // Get the current status of the recorder
       router.get('/self/status', statusHandler)
-      router.get('/self/prcount', positionReportCountHandler)
 
+      // Download GPX file for a passage
+      router.get('/self/downloadgpx', downloadHandler)
       return router
     },
 
@@ -217,10 +224,23 @@ export default function (app: any) {
     schema: {
       type: 'object',
       properties: {
+
         updaterate: {
           type: 'number',
-          title: 'Position Update Rate (s)',
+          title: 'Position Update Rate (seconds)',
           default: 1
+        },
+
+        movementmeters: {
+          type: 'number',
+          title: 'Distance (meters) vessel must move before logging position report',
+          default: 10
+        },
+
+        stationarymins: {
+          type: 'number',
+          title: 'End the sailing passage when the vessel has been stationary for (minutes):',
+          default: 10
         },
         authtoken: {
           type: 'string',

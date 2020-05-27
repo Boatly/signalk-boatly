@@ -1,12 +1,14 @@
 import { Util } from './util'
 import {Database} from './database'
+import { PassageStatus } from './common'
+import { ɵConsole } from '@angular/core'
 
 // Used to determine if the boating is moving or stationary
 let underway = false
 let lastPositionReport: any
 
 // Details of current passage being recorded
-let passageStartTime: any = null
+let passageStartTime: string = null
 
 interface IStatus {
   status: 'WAITING_INITIAL_POSITION' | 'READY' | 'RECORDING' | 'STOPPED',
@@ -71,6 +73,7 @@ export module PositionHandler {
       desc = 'Ready - Waiting for vessel to move'
     } else if (value === 'RECORDING') {
       desc = 'Vessel is moving and sailing passage is being recorded.'
+      console.log(`passageStartTime: ${passageStartTime}`)
       prs = database.getPositionReportCount(passageStartTime)
     } else if (value === 'STOPPED') {
       desc = 'Vessel is stopped, recording will continue until vessel has been stationary for '
@@ -156,10 +159,10 @@ export module PositionHandler {
       // This is the start of a new passage - set the start time and log to database
       app.debug(`** New Passage Started : ${pr.time} **`)
 
-      passageStartTime = pr.time
+      passageStartTime = new Date(pr.time).toISOString()
 
       // Create new passage record in database
-      database.createPassage(pr.time)
+      database.createPassage(passageStartTime)
     }
 
     // Check if vessel has been stationary for >= 15 min ... this is end of passage
@@ -176,14 +179,14 @@ export module PositionHandler {
         app.debug(`** END OF PASSAGE DETECTED **`)
 
         // Write to database to close passage
-        endPassage(pr.time.valueOf())
+        endPassage(new Date(pr.time).toISOString())
       }
     }
 
   }
 
-  export function endPassage(time: number) {
-    database.closePassageRecord(passageStartTime, time)
+  export function endPassage(end: string) {
+    database.closePassageRecord(passageStartTime, end)
 
     passageStartTime = null
     lastPositionReport = null
@@ -204,12 +207,20 @@ export module PositionHandler {
     return database.getQueuedPassages()
   }
 
-  export function setPassageStatus(time: any, status: 'creategpx' | 'getpsurl' | 'uploads3' | 'queue' | 'creategpx - failed' | 'getpsurl - failed' | 'uploads3 - failed' | 'queue - failed') {
+  export function setPassageStatus(time: any, status: PassageStatus) {
     database.setPassageStatus(time, status)
   }
 
   export function deletePassage(start: any, end: any) {
     database.deletePassage(start, end)
+  }
+
+  export function deleteCompletedPassages() {
+    const passages = database.getCompletedPassages()
+
+    passages.forEach(passage => {
+      database.deletePassage(passage.start, passage.end)
+    });
   }
 
 }

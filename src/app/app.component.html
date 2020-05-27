@@ -4,42 +4,94 @@
 
 <div class="container">
 
-  <mat-card>
-    <mat-card-title>{{statusTitle}}</mat-card-title>
-    <mat-card-subtitle>{{status.description}}</mat-card-subtitle>
-    <mat-card-content>{{additionalInfo}}</mat-card-content>
-    <button *ngIf="(status.status == 'RECORDING') || (status.status == 'STOPPED')" mat-raised-button color="primary" (click)="finishPassage()">Finish</button>
+  <mat-card id="parent" style="min-height: 178px;">
+    <mat-card-header>
+      <mat-card-title>{{statusTitle}}</mat-card-title>
+      <mat-card-subtitle>{{status.description}}</mat-card-subtitle>
+    </mat-card-header>
+
+    <mat-card-content class="ml">
+      <p>{{additionalInfo}}</p>
+    </mat-card-content>
+
+    <mat-card-actions class="ml" *ngIf="(status.status == 'RECORDING') || (status.status == 'STOPPED')">
+      <button mat-raised-button color="primary" (click)="finishPassage()">Finish</button>
+    </mat-card-actions>
+
+    <mat-divider></mat-divider>
+
+    <mat-card-footer id="child" class="ml">
+      <mat-card-subtitle>Database path: {{DBPath}}</mat-card-subtitle>
+    </mat-card-footer>
   </mat-card>
 
   <mat-card style="margin-top: 15px;">
     <mat-card-title>Recorded Passages</mat-card-title>
-    <div *ngIf="passages && passages.length > 0">
 
-      <mat-list>
-        <div *ngFor="let passage of passages">
-          <mat-list-item *ngIf="passage.status != 'Recording'">
-            <div *ngIf="passage.status == 'Uploading' || passage.status == 'Completed' || passage.status == 'Queued' || passage.status == 'Failed'"
-              style="margin-right: 20px">
-              {{ passage.start | date : 'MMMM d HH:mm'}} to {{passage.end | date : 'MMMM d HH:mm'}}</div>
+    <div *ngIf="passages && passages.length == 0">
+      There are no recorded passages to upload.
+    </div>
+  </mat-card>
+
+  <div *ngIf="passages && passages.length > 0">
+
+
+    <div *ngFor="let passage of passages">
+
+      <mat-card *ngIf="passage.status != 'recording'" style="margin-top: 10px">
+        <mat-card-subtitle>{{ passage.start | date : 'MMMM d HH:mm'}} to {{passage.end | date : 'MMMM d HH:mm'}}
+        </mat-card-subtitle>
+
+        <div *ngIf="passage.status == 'processed'" class="status">Completed</div>
+        <div *ngIf="passage.status == 'processing'" class="status">Processing</div>
+        <div *ngIf="passage.status.includes('failed')" class="status">Failed</div>
+
+        <button *ngIf="passage.status == 'completed'" mat-raised-button (click)="processPassage(passage)">
+          Upload
+        </button>
+
+        <button *ngIf="passage.status.includes('failed')" mat-raised-button style="margin-right: 10px"
+          (click)="processPassage(passage)">
+          Retry
+        </button>
+
+        <button *ngIf="passage.status == 'completed' || passage.status.includes('failed')"
+          style="margin-left: 10px; margin-right: 10px;" mat-raised-button color="warn"
+          (click)="discardPassage(passage)">
+          Discard
+        </button>
+
+        <button mat-raised-button color="accent">Download GPX file</button>
+
+      </mat-card>
+
+      <!--
+          <mat-list-item *ngIf="passage.status != 'recording'">
+            <div style="margin-right: 20px">{{ passage.start | date : 'MMMM d HH:mm'}} to
+              {{passage.end | date : 'MMMM d HH:mm'}}</div>
 
             <mat-chip-list *ngIf="passage.status == 'Uploading' || passage.status == 'Queued'">
               <mat-chip color="primary" selected>{{passage.status}}</mat-chip>
             </mat-chip-list>
 
-            <mat-chip-list *ngIf="passage.status == 'Failed'">
-              <mat-chip color="warn" selected>{{passage.status}}</mat-chip>
+            <mat-chip-list *ngIf="passage.status.includes('- failed')">
+              <mat-chip color="warn" selected>Failed </mat-chip>
             </mat-chip-list>
 
-            <button *ngIf="passage.status == 'Completed'" mat-raised-button (click)="processPassage(passage)">
+            <mat-chip-list *ngIf="passage.status == 'processed'">
+              <mat-chip color="accent" selected>Completed</mat-chip>
+            </mat-chip-list>
+
+            <button *ngIf="passage.status == 'completed'" mat-raised-button (click)="processPassage(passage)">
               Upload
             </button>
 
-            <button *ngIf="passage.status == 'Failed'" style="margin-left: 10px" mat-raised-button
+            <button *ngIf="passage.status.includes('- failed')" style="margin-left: 10px" mat-raised-button
               (click)="processPassage(passage)">
               Retry
             </button>
 
-            <button *ngIf="passage.status == 'Completed' || passage.status == 'Failed'" style="margin-left: 10px"
+            <button *ngIf="passage.status == 'completed' || passage.status == 'Failed'" style="margin-left: 10px"
               mat-raised-button color="warn" (click)="discardPassage(passage)">
               Discard
             </button>
@@ -49,13 +101,13 @@
             <mat-divider></mat-divider>
 
           </mat-list-item>
-        </div>
-      </mat-list>
+          -->
     </div>
-  </mat-card>
 
-  <div *ngIf="passages && passages.length == 0">
-    There are no recorded passages to upload.
+
+    <button (disabled)='deleting' mat-raised-button color="primary" style="margin-top: 20px; margin-bottom: 20px"
+      (click)="deleteCompleted()">Delete completed passages</button>
+
   </div>
 
 </div>

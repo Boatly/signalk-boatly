@@ -22,7 +22,30 @@ export interface IJob {
   gpxfilename: string,
   dbPath: string,
   authToken: string,
-  status?: string,
+  status: JobStatus,
   psurl?: string,
   passageid?: string
+}
+
+export enum JobStatus {
+  CreateGPX,
+  GetPSURL,
+  UploadS3,
+  Queue,
+  Processed,
+  CreatedGPXFailed,
+  GetPSURLFailed,
+  UploadS3Failed,
+  QueueFailed
+}
+
+export enum PassageStatus {
+  Recording = 'recording',
+  Completed = 'completed',
+  Processing = 'processing',
+  Processed = 'processed',
+  CreatedGPXFailed = 'creategpx-failed',
+  GetPSURLFailed = 'getpsurl-failed',
+  UploadS3Failed = 'uploads3-failed',
+  QueueFailed = 'queue-failed'
 }

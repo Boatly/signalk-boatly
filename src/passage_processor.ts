@@ -1,5 +1,5 @@
 import { Database } from './database'
-import { IJob } from './common'
+import { IJob, PassageStatus, JobStatus } from './common'
 
 const axios = require('axios').default
 const Queue = require('better-queue');
@@ -19,7 +19,29 @@ export class PassageProcessor {
 
     this.q.push(job)
       .on('finish', function (result) {
-        if (job.status !== 'processed' && job.status.indexOf('- failed') === -1) {
+        // If the job is finished ('processed') or failed then set the passage status
+        if (job.status === JobStatus.Processed || (job.status >= JobStatus.CreatedGPXFailed && job.status <= JobStatus.QueueFailed)) {
+
+          let status
+
+          if (job.status === JobStatus.Processed ) {
+            status = PassageStatus.Processed
+          } else {
+            if (job.status === JobStatus.CreatedGPXFailed) {
+              status = PassageStatus.CreatedGPXFailed
+            } else if (job.status === JobStatus.GetPSURLFailed) {
+              status = PassageStatus.GetPSURLFailed
+            } else if (job.status === JobStatus.QueueFailed) {
+              status = PassageStatus.QueueFailed
+            } else if (job.status === JobStatus.UploadS3Failed) {
+              status = PassageStatus.UploadS3Failed
+            }
+          }
+
+          new Database(job.dbPath).setPassageStatus(job.start, status)
+
+        } else {
+          // Otherwise re-queue it
           that.queuePassage(job)
         }
       })
@@ -31,59 +53,50 @@ export class PassageProcessor {
   async processPassage(job: IJob, callback) {
 
     // Retrieve the passage from the database
-    let status
-
-    try {
-      status = new Database(job.dbPath).getPassageStatus(job.start)
-    } catch (error) {
-      console.log(`ERROR: ${error}`)
-    }
+    let status = job.status
 
     // Stage 1 - create the gpx file
-    if (status === 'creategpx') {
+    if (status === JobStatus.CreateGPX) {
       await exportToGPX(job)
-      status = 'getpsurl'
+      status = JobStatus.GetPSURL
     }
 
     // Stage 2 - get an AWS Presigned URL to upload the gpx file to
-    else if (status === 'getpsurl') {
+    else if (status === JobStatus.GetPSURL) {
       const response = await getAWSPresignedURL(job)
 
       if (response === 'Failed') {
-        status = 'getpsurl-failed'
+        status = JobStatus.GetPSURLFailed
       } else {
         job.psurl = response.url
         job.passageid = response.passageid
-        status = 'uploads3'
+        status = JobStatus.UploadS3
       }
     }
 
     // Stage 3 - upload to psurl
-    else if (status === 'uploads3') {
+    else if (status === JobStatus.UploadS3) {
       const success = await uploadToS3(job.gpxpath, job.psurl)
 
       if (success === true) {
-        status = 'queue'
+        status = JobStatus.Queue
       } else {
-        status = 'uploads3-failed'
+        status = JobStatus.UploadS3Failed
       }
     }
 
     // Stage 4 - Queue passage for import with boatly
-    else if (status === 'queue') {
+    else if (status === JobStatus.Queue) {
       const success = await queueImport(job.gpxfilename, '4b36afc8-5205-49c1-af16-4dc6f96db982', job.passageid, job.authToken)
 
       if (success === true) {
-        status = 'processed'
+        status = JobStatus.Processed
       } else {
-        status = 'queue-failed'
+        status = JobStatus.QueueFailed
       }
     }
 
-    const db = new Database(job.dbPath)
-
-    // Re-queue job to move it to the next stage
-    db.setPassageStatus(job.start, status)
+    // Set the job status so that it can be re-queued for the next stage of the process
     job.status = status
 
     callback()

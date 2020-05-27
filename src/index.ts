@@ -8,6 +8,7 @@ import { combineWith } from 'baconjs'
 import { Util } from './util'
 import { PositionHandler } from './position_handler'
 import { PassageProcessor } from './passage_processor';
+import { PassageStatus, JobStatus } from './common';
 
 const axios = require('axios').default
 
@@ -45,7 +46,7 @@ export default function (app: any) {
 
       try {
         authToken = props.authtoken
-        dbPath = require('path').join(app.getDataDirPath(), 'boatly.db')
+        dbPath = getDBPath()
 
         // Start the passage processor queue
         passageProcessor = new PassageProcessor()
@@ -114,12 +115,12 @@ export default function (app: any) {
 
         app.debug(`Queing passage ${new Date(start).toISOString()} - ${new Date(end).toISOString()}`)
 
-        PositionHandler.setPassageStatus(start, 'creategpx')
+        PositionHandler.setPassageStatus(start, PassageStatus.Processing)
 
         const path = app.getDataDirPath()
         const filename = start.replace(/\-/g, '').replace(/\:/g, '').replace(/\./g, '') + '.gpx'
 
-        passageProcessor.queuePassage({ start: start, end: end, gpxpath: `${path}/${filename}`, dbPath: dbPath, authToken: authToken,gpxfilename: filename })
+        passageProcessor.queuePassage({ status: JobStatus.CreateGPX, start: start, end: end, gpxpath: `${path}/${filename}`, dbPath: dbPath, authToken: authToken,gpxfilename: filename })
 
         res.type('application/json')
         res.json({ status: 'Uploading' })
@@ -137,10 +138,9 @@ export default function (app: any) {
 
       // Closes off the current passage being recorded
       const finishHandler = function (req: any, res: any, next: any) {
-        PositionHandler.endPassage(Date.now().valueOf())
-
+        PositionHandler.endPassage(new Date().toISOString())
         res.type('application/json')
-        res.json({ status: 'Completed' })
+        res.json({ status: 'OK' })
       }
 
       // TODO - Read redis store to get token
@@ -176,43 +176,70 @@ export default function (app: any) {
       // TODO
       const downloadHandler = function(req: any, res: any, next: any) {
         // res.download()
+        res.type('application/json')
+        res.json({ status: 'OK' })
+      }
+
+      const deleteCompletedHandler = function(req: any, res: any, next: any) {
+        PositionHandler.deleteCompletedPassages()
+        res.type('application/json')
+        res.json({ status: 'OK' })
+      }
+
+      const databasePathHandler = function(req: any, res: any, next: any) {
+        PositionHandler.deleteCompletedPassages()
+        res.type('application/json')
+        res.json({ path: getDBPath() })
       }
 
       // Log into Boatly, returns an AuthToken used to upload and queue passages
       router.post('/self/login', loginHandler)
       router.post('/vessels/self/login', loginHandler)
-      router.post('/vessels/' + app.selfId + '/login', loginHandler)
+      router.post(`/vessels/${app.selfId}/login`, loginHandler)
 
       // Determine if user has authenticated with Boatly
       router.get('/self/isloggedin', isLoggedInHandler)
       router.get('/vessels/self/isloggedin', isLoggedInHandler)
-      router.get('/vessels/' + app.selfId + '/isloggedin', isLoggedInHandler)
+      router.get(`/vessels/${app.selfId}/isloggedin`, isLoggedInHandler)
 
       // Get a list of recorded passages and their status
       router.get('/self/log', logHandler)
       router.get('/vessels/self/log', logHandler)
-      router.get('/vessels/' + app.selfId + '/log', logHandler)
+      router.get(`/vessels/${app.selfId}/log`, logHandler)
 
       // Queue a recorded passage to be processed by Boatly
       router.post('/self/process', processHandler)
       router.post('/vessels/self/process', processHandler)
-      router.post('/vessels/' + app.selfId + '/process', processHandler)
+      router.post(`/vessels/${app.selfId}/process`, processHandler)
 
       // Discard a recorded passage
       router.post('/self/discard', discardHandler)
       router.post('/vessels/self/discard', discardHandler)
-      router.post('/vessels/' + app.selfId + '/discard', discardHandler)
+      router.post(`/vessels/${app.selfId}/discard`, discardHandler)
 
       // Close a passage, finish recording - so that it can be uploaded or discarded
       router.post('/self/finish', finishHandler)
       router.post('/vessels/self/finish', finishHandler)
-      router.post('/vessels/' + app.selfId + '/finish', finishHandler)
+      router.post(`/vessels/${app.selfId}/finish`, finishHandler)
 
       // Get the current status of the recorder
       router.get('/self/status', statusHandler)
+      router.get('/vessels/self/status', statusHandler)
+      router.get('/self/status', statusHandler)
+
+      // Return the path of the database to which position reports are logged
+      router.get('/self/databasepath', databasePathHandler)
+      router.get('/vessels/self/databasepath', databasePathHandler)
+      router.get('/self/databasepath', databasePathHandler)
 
       // Download GPX file for a passage
       router.get('/self/downloadgpx', downloadHandler)
+
+      // Delete completed passages
+      router.post('/self/deletecompleted', deleteCompletedHandler)
+      router.post('/vessels/self/deletecompleted', deleteCompletedHandler)
+      router.post(`/vessels/${app.selfId}/deletecompleted`, deleteCompletedHandler)
+
       return router
     },
 
@@ -310,5 +337,9 @@ export default function (app: any) {
       .catch((error: any) => {
         app.debug(error)
       })
+  }
+
+  function getDBPath(): string {
+    return require('path').join(app.getDataDirPath(), 'boatly.db')
   }
 }

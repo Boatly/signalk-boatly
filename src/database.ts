@@ -1,4 +1,4 @@
-import { IPositionReport, IPassage } from './common'
+import { IPositionReport, IPassage, PassageStatus } from './common'
 
 const sqlite = require("better-sqlite3")
 
@@ -17,9 +17,9 @@ export class Database {
     this.db.prepare("CREATE TABLE IF NOT EXISTS passages (start TEXT, end TEXT, status TEXT)").run()
   }
 
-  createPassage(startTime: number) {
+  createPassage(start: string) {
     this.db.prepare('INSERT INTO passages(start, status) VALUES(?, ?)')
-      .run(new Date(startTime).toISOString(), 'Recording')
+      .run(start, PassageStatus.Recording)
   }
 
   getPassages(): Array<IPassage> {
@@ -30,9 +30,13 @@ export class Database {
     return this.db.prepare('SELECT * FROM passages WHERE status = ?').all('Queued')
   }
 
-  closePassageRecord(startTime: number, endTime: number) {
+  getCompletedPassages(): Array<IPassage> {
+    return this.db.prepare('SELECT * FROM passages WHERE status = ?').all('processed')
+  }
+
+  closePassageRecord(start: string, end: string) {
     this.db.prepare('UPDATE passages SET end = ?, status = ? WHERE start = ?')
-      .run(new Date(endTime).toISOString(), 'Completed', new Date(startTime).toISOString())
+      .run(end, PassageStatus.Completed, start)
   }
 
    // Get the start time of the current passage being recorded
@@ -41,7 +45,7 @@ export class Database {
     return result ? result.start : null
   }
 
-  getPassageStatus(start: string): 'creategpx' | 'getpsurl' | 'uploads3' | 'queue' | 'creategpx - failed' | 'getpsurl - failed' | 'uploads3 - failed' | 'queue - failed' {
+  getPassageStatus(start: string): PassageStatus {
     try {
       const result = this.db.prepare('SELECT status FROM passages WHERE start = ?').get(start)
       return result ? result.status : null
@@ -71,7 +75,7 @@ export class Database {
     return this.db.prepare('SELECT count(*) FROM positionreports WHERE time >= ?').pluck().get(start)
   }
 
-  setPassageStatus(start: any, status: 'creategpx' | 'getpsurl' | 'uploads3' | 'queue' | 'creategpx - failed' | 'getpsurl - failed' | 'uploads3 - failed' | 'queue - failed') {
+  setPassageStatus(start: any, status: PassageStatus) {
     this.db.prepare('UPDATE passages SET status = ? WHERE start = ?').run(status, start)
   }
 

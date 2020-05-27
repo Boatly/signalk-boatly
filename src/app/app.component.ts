@@ -24,6 +24,8 @@ export class AppComponent implements OnInit, OnDestroy {
   hostSSL: boolean;
   host = '';
   devMode = isDevMode()
+  deleting = false
+  timeoutID
 
   title = 'signalk-boatly';
   repeat = 0
@@ -34,6 +36,7 @@ export class AppComponent implements OnInit, OnDestroy {
   status = null
   statusTitle = ''
   additionalInfo = null
+  DBPath = ''
 
   intervalID
 
@@ -53,7 +56,8 @@ export class AppComponent implements OnInit, OnDestroy {
       console.log(this.status)
       this.getStatus()
       this.getPassages()
-      this.intervalID = setInterval(() => this.getStatus(), 1000)
+      this.getDBPath()
+      this.intervalID = setInterval(() => this.getStatus(), 2000)
     })
       .catch(e => {
         this.status = `Failed to connect to SignalK Server ${this.host}`
@@ -70,6 +74,15 @@ export class AppComponent implements OnInit, OnDestroy {
     this.sk.api.get('self/status').subscribe(
       (response: any) => {
         this.status = response
+        this.decodeStatus()
+      }
+    )
+  }
+
+  getDBPath() {
+    this.sk.api.get('self/databasepath').subscribe(
+      (response: any) => {
+        this.DBPath = response.path
         this.decodeStatus()
       }
     )
@@ -107,12 +120,18 @@ export class AppComponent implements OnInit, OnDestroy {
 
   // Retrieve a list of passages that require processing
   getPassages() {
+    if (this.timeoutID) {
+      clearTimeout(this.timeoutID)
+      this.timeoutID = null
+    }
+
     this.sk.api.get('vessels/self/log').subscribe(
       (response: any) => {
         this.passages = response
 
-        if (this.passages.filter(passage => (passage.status === 'Uploading' || passage.status === 'Queued')).length > 0) {
-          setTimeout(this.getPassages.bind(this), 5000)
+        if (this.passages.filter(passage => (passage.status === 'processing')).length > 0) {
+          console.log('NEED TO CALL AGAIN!')
+          this.timeoutID = setTimeout(this.getPassages.bind(this), 5000)
           console.log("Callliing a gain")
         }
       },
@@ -127,7 +146,7 @@ export class AppComponent implements OnInit, OnDestroy {
       (response: any) => {
         console.log(response.status)
         passage.status = response.status
-        // this.getPassages()
+        this.getPassages()
       },
       error => {
         console.log(error)
@@ -158,6 +177,24 @@ export class AppComponent implements OnInit, OnDestroy {
       },
       error => {
         console.log(error)
+      }
+    )
+  }
+
+  deleteCompleted() {
+    if (this.deleting) return
+
+    this.deleting = true
+
+    this.sk.api.post('vessels/self/deletecompleted', {}).subscribe(
+      (response: any) => {
+        this.getPassages()
+        this.deleting = false
+        console.log('Calling delete completed')
+      },
+      error => {
+        console.log(error)
+        this.deleting = false
       }
     )
   }

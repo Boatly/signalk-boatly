@@ -1,5 +1,6 @@
 import { Database } from './database'
-import { IJob, PassageStatus, JobStatus } from './common'
+import { IJob, PassageStatus, JobStatus, ResponseStatus } from './common'
+const path = require('path');
 
 const axios = require('axios').default
 const Queue = require('better-queue');
@@ -10,7 +11,7 @@ export class PassageProcessor {
   q
 
   constructor() {
-    this.q = new Queue(this.processPassage) // , { afterProcessDelay: 4000 }
+    this.q = new Queue(this.processPassage) // , , { maxTimeout: 2000 } , { afterProcessDelay: 4000 }
   }
 
   // Add a passage to the queue of passages to be processed by Boatly
@@ -24,7 +25,7 @@ export class PassageProcessor {
 
           let status
 
-          if (job.status === JobStatus.Processed ) {
+          if (job.status === JobStatus.Processed) {
             status = PassageStatus.Processed
           } else {
             if (job.status === JobStatus.CreatedGPXFailed) {
@@ -57,15 +58,15 @@ export class PassageProcessor {
 
     // Stage 1 - create the gpx file
     if (status === JobStatus.CreateGPX) {
-      await exportToGPX(job)
-      status = JobStatus.GetPSURL
+      const response = await exportToGPX(job)
+      status = (response === ResponseStatus.OK) ? JobStatus.GetPSURL : JobStatus.CreatedGPXFailed
     }
 
     // Stage 2 - get an AWS Presigned URL to upload the gpx file to
     else if (status === JobStatus.GetPSURL) {
       const response = await getAWSPresignedURL(job)
 
-      if (response === 'Failed') {
+      if (response === ResponseStatus.Failed) {
         status = JobStatus.GetPSURLFailed
       } else {
         job.psurl = response.url
@@ -76,24 +77,14 @@ export class PassageProcessor {
 
     // Stage 3 - upload to psurl
     else if (status === JobStatus.UploadS3) {
-      const success = await uploadToS3(job.gpxpath, job.psurl)
-
-      if (success === true) {
-        status = JobStatus.Queue
-      } else {
-        status = JobStatus.UploadS3Failed
-      }
+      const response = await uploadToS3(job.gpxFilename, job.psurl)
+      status = (response === ResponseStatus.OK) ? JobStatus.Queue : JobStatus.UploadS3Failed
     }
 
     // Stage 4 - Queue passage for import with boatly
     else if (status === JobStatus.Queue) {
-      const success = await queueImport(job.gpxfilename, '4b36afc8-5205-49c1-af16-4dc6f96db982', job.passageid, job.authToken)
-
-      if (success === true) {
-        status = JobStatus.Processed
-      } else {
-        status = JobStatus.QueueFailed
-      }
+      const response = await queueImport(job.gpxFilename, job.userID, job.passageid, job.authToken)
+      status = (response === ResponseStatus.OK) ? JobStatus.Processed : JobStatus.QueueFailed
     }
 
     // Set the job status so that it can be re-queued for the next stage of the process
@@ -102,99 +93,126 @@ export class PassageProcessor {
     callback()
 
     async function exportToGPX(job: IJob) {
-      // Retrieve the passage PRs from the database
-      let prs = new Database(job.dbPath).getPassagePRs(job.start, job.end)
+      try {
+        // Retrieve the passage PRs from the database
+        let prs = new Database(job.dbPath).getPassagePRs(job.start, job.end)
 
-      // Write to the GPX file
-      fs.appendFileSync(job.gpxpath, `<?xml version='1.0'?><gpx version='1.0'><trk><trkseg>`)
+        // Write to the GPX file
+        fs.appendFileSync(job.gpxFilename, `<?xml version='1.0'?><gpx version='1.0'><trk><trkseg>`)
 
-      // Create a GPX file and write each row to it
-      prs.forEach(async (row) => {
-        let trckpt = `<trkpt lat='${row.lat}' lon='${row.lon}'><time>${row.time}</time><cog>${row.cog}</cog><sog>${row.sog}</sog>`
+        // Create a GPX file and write each row to it
+        prs.forEach(async (row) => {
+          let trckpt = `<trkpt lat='${row.lat}' lon='${row.lon}'><time>${row.time}</time><cog>${row.cog}</cog><sog>${row.sog}</sog>`
 
-        if (row.tws) {
-          trckpt += `<tws>${row.tws}</tws>`
-        }
+          if (row.tws) {
+            trckpt += `<tws>${row.tws}</tws>`
+          }
 
-        if (row.twa) {
-          trckpt += `<twa>${row.twa}</twa>`
-        }
+          if (row.twa) {
+            trckpt += `<twa>${row.twa}</twa>`
+          }
 
-        if (row.twd) {
-          trckpt += `<twd>${row.tws}</twd>`
-        }
+          if (row.twd) {
+            trckpt += `<twd>${row.tws}</twd>`
+          }
 
-        trckpt += `</trkpt>`
+          trckpt += `</trkpt>`
 
-        fs.appendFileSync(job.gpxpath, trckpt)
-      });
+          fs.appendFileSync(job.gpxFilename, trckpt)
+        });
 
-      fs.appendFileSync(job.gpxpath, `</trkseg></trk></gpx>`)
+        fs.appendFileSync(job.gpxFilename, `</trkseg></trk></gpx>`)
+
+        return ResponseStatus.OK
+      }
+      catch (error) {
+        return ResponseStatus.Failed
+      }
     }
 
     async function getAWSPresignedURL(job: IJob) {
-      // Get a pre-shared-url
-      const options = {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': job.authToken
+      try {
+        // Get a pre-shared-url
+        const options = {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': job.authToken
+          }
+        };
+
+        const fileName = path.basename(job.gpxFilename)
+
+        const response: any = await axios.get(`https://boatly-api.herokuapp.com/v1/s3/signimport?file-name=${fileName}`, options)
+
+        // If this failed set the item's status to failed and don't continue
+        if (response.status !== 200) {
+          console.log(`Failed to get pre-signed URL: ${response.statusText}`)
+          return ResponseStatus.Failed
+        } else {
+          return response.data
         }
-      };
-
-      const response: any = await axios.get(`https://boatly-api.herokuapp.com/v1/s3/signimport?file-name=${job.gpxfilename}`, options)
-
-      // If this failed set the item's status to failed and don't continue
-      if (response.status !== 200) {
-        console.log(`Failed to get pre-signed URL: ${response.statusText}`)
-        return 'Failed'
-      } else {
-        return response.data
+      }
+      catch (error) {
+        return ResponseStatus.Failed
       }
     }
 
-    async function uploadToS3(path: string, presignedUrl: string) {
+    async function uploadToS3(filename: string, presignedUrl: string) {
+      try {
+        const stream = fs.createReadStream(filename)
 
-      const readmeStream = fs.createReadStream(path)
-      readmeStream.on('error', console.log)
-      const { size } = fs.statSync(path)
+        stream.on('error', console.log)
 
-      const response = await axios({
-        method: 'PUT',
-        url: presignedUrl,
-        headers: {
-          'Content-Type': 'application/gpx+xml',
-          'Content-Length': size,
-        },
-        data: readmeStream
-      })
+        const { size } = fs.statSync(filename)
 
-      return true
+        await axios({
+          method: 'PUT',
+          url: presignedUrl,
+          headers: {
+            'Content-Type': 'application/gpx+xml',
+            'Content-Length': size,
+          },
+          data: stream
+        })
+
+        stream.close()
+
+        return ResponseStatus.OK
+      }
+      catch (error) {
+        return ResponseStatus.Failed
+      }
     }
 
     async function queueImport(filename: string, user_id: string, passageID: string, authToken: string) {
-      const payload = {
-        filename: filename,
-        userid: user_id,
-        passageid: passageID
+      try {
+        const payload = {
+          filename: path.basename(filename),
+          userid: user_id,
+          passageid: passageID
+        }
+
+        const options = {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': job.authToken
+          }
+        };
+
+        const response = await axios.post(`https://boatly-api.herokuapp.com/v1/mq/import`, payload, options)
+
+        if (response.status === 200) {
+          return ResponseStatus.OK
+        } else {
+          console.log(`Failed to queue passage: ${response.statusText}`)
+          return ResponseStatus.Failed
+        }
       }
 
-      const options = {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': job.authToken
-        }
-      };
-
-      const response = await axios.post(`https://boatly-api.herokuapp.com/v1/mq/import`, payload, options)
-
-      if (response.status === 200) {
-        return true
-      } else {
-        console.log(`Failed to queue passage: ${response.statusText}`)
-        return false
+      catch (error) {
+        return ResponseStatus.Failed
       }
     }
-
   }
 
 }

@@ -9,8 +9,11 @@ import { Util } from './util'
 import { PositionHandler } from './position_handler'
 import { PassageProcessor } from './passage_processor';
 import { PassageStatus, JobStatus } from './common';
+import { Database } from './database';
+import { stringify } from 'flatted';
 
 const axios = require('axios').default
+const fs = require('fs');
 
 interface Plugin {
   start: (app: any) => void,
@@ -25,13 +28,14 @@ interface Plugin {
 }
 
 export default function (app: any) {
-  const error = app.error || ((msg: string) => { console.error(msg) })
-  const debug = app.debug || ((msg: string) => { console.log(msg) })
+  // const error = app.error || ((msg: string) => { console.error(msg) })
+  // const debug = app.debug || ((msg: string) => { console.log(msg) })
 
   const baseurl = 'https://boatly-api.herokuapp.com/v1'
 
   let unsubscribe: () => void
-  let authToken = ''
+  let authToken = null
+  let userID = null
   let dbPath = ''
   let passageProcessor: PassageProcessor
 
@@ -45,8 +49,10 @@ export default function (app: any) {
     start: function (props: any) {
 
       try {
-        authToken = props.authtoken
         dbPath = getDBPath()
+
+        // Login to Boatly to get AuthToken and User ID
+        loginBoatly(props.authentication.email, props.authentication.password)
 
         // Start the passage processor queue
         passageProcessor = new PassageProcessor()
@@ -110,27 +116,48 @@ export default function (app: any) {
 
       // Add the passage to the queue of passages to process
       const processHandler = function (req: any, res: any, next: any) {
-        const start = req.body.start
-        const end = req.body.end
 
-        app.debug(`Queing passage ${new Date(start).toISOString()} - ${new Date(end).toISOString()}`)
+        // Exit if user is not authenticated
+        if (!authToken || !userID) {
+          res.type('application/json')
+          res.json({ status: 'completed' })
+        } else {
+          // Queue the passage for processing
+          const start = req.body.start
+          const end = req.body.end
 
-        PositionHandler.setPassageStatus(start, PassageStatus.Processing)
+          app.debug(`Queing passage ${new Date(start).toISOString()} - ${new Date(end).toISOString()}`)
 
-        const path = app.getDataDirPath()
-        const filename = start.replace(/\-/g, '').replace(/\:/g, '').replace(/\./g, '') + '.gpx'
+          PositionHandler.setPassageStatus(start, PassageStatus.Processing)
 
-        passageProcessor.queuePassage({ status: JobStatus.CreateGPX, start: start, end: end, gpxpath: `${path}/${filename}`, dbPath: dbPath, authToken: authToken,gpxfilename: filename })
+          const filename = startToGPXFilename(start)
 
-        res.type('application/json')
-        res.json({ status: 'Uploading' })
+          passageProcessor.queuePassage({
+            status: JobStatus.CreateGPX,
+            start: start, end: end,
+            dbPath: dbPath,
+            authToken: authToken,
+            userID: userID,
+            gpxFilename: filename
+          })
+
+          res.type('application/json')
+          res.json({ status: 'processing' })
+        }
       }
 
       const discardHandler = function (req: any, res: any, next: any) {
         const start = req.body.start
         const end = req.body.end
 
+        // Delete the passage from the database
         PositionHandler.deletePassage(start, end)
+
+        // Delete the GPX file
+        const filename = startToGPXFilename(start)
+        if (fs.existsSync(filename)) {
+          fs.unlinkSync(filename)
+        }
 
         res.type('application/json')
         res.json({ status: 'Deleted' })
@@ -143,102 +170,85 @@ export default function (app: any) {
         res.json({ status: 'OK' })
       }
 
-      // TODO - Read redis store to get token
       const isLoggedInHandler = function (req: any, res: any, next: any) {
         res.type('application/json')
-        res.json({ loggedin: false })
+        res.json({ loggedin: isLoggedIn() })
       }
 
-      // Get auth token from Boatly
-      const loginHandler = function (req: any, res: any, next: any) {
-        axios.post(`${baseurl}/authenticate`, req)
-          .then((response: any) => {
-            app.debug(`JWT: ${req.JWT}`)
-            app.debug(`User ID: ${req.user.user_id}`)
-
-            // TODO - store token and user id in Redis so that worker process can read it
-            res.type('application/json')
-            res.json({ status: 'OK' })
-          })
-          .catch((error: any) => {
-            app.debug('Login failed')
-            res.type('application/json')
-            res.json({ status: 'Failed' })
-          })
-      }
-
-      const statusHandler = function(req: any, res: any, next: any) {
-        const result = PositionHandler.getStatus()
+      const statusHandler = function (req: any, res: any, next: any) {
+        const status = PositionHandler.getStatus()
+        const result = { loggedin: isLoggedIn(), status: status }
         res.type('application/json')
         res.json(result)
       }
 
-      // TODO
-      const downloadHandler = function(req: any, res: any, next: any) {
-        // res.download()
-        res.type('application/json')
-        res.json({ status: 'OK' })
+      // Download the GPX file for a passage
+      const downloadHandler = async function (req: any, res: any, next: any) {
+        const gpxFile = startToGPXFilename(req.query.start)
+
+        if (!fs.existsSync(gpxFile)) {
+          await exportToGPX(gpxFile, req.query.start, req.query.end)
+        }
+
+        res.download(gpxFile)
       }
 
-      const deleteCompletedHandler = function(req: any, res: any, next: any) {
+      const deleteCompletedHandler = function (req: any, res: any, next: any) {
         PositionHandler.deleteCompletedPassages()
         res.type('application/json')
         res.json({ status: 'OK' })
       }
 
-      const databasePathHandler = function(req: any, res: any, next: any) {
+      const databasePathHandler = function (req: any, res: any, next: any) {
         PositionHandler.deleteCompletedPassages()
         res.type('application/json')
         res.json({ path: getDBPath() })
       }
 
-      // Log into Boatly, returns an AuthToken used to upload and queue passages
-      router.post('/self/login', loginHandler)
-      router.post('/vessels/self/login', loginHandler)
-      router.post(`/vessels/${app.selfId}/login`, loginHandler)
-
       // Determine if user has authenticated with Boatly
-      router.get('/self/isloggedin', isLoggedInHandler)
-      router.get('/vessels/self/isloggedin', isLoggedInHandler)
-      router.get(`/vessels/${app.selfId}/isloggedin`, isLoggedInHandler)
+      router.get('/self/signalkboatly/isloggedin', isLoggedInHandler)
+      router.get('/vessels/self/signalkboatly/isloggedin', isLoggedInHandler)
+      router.get(`/vessels/${app.selfId}/signalkboatly/isloggedin`, isLoggedInHandler)
 
       // Get a list of recorded passages and their status
-      router.get('/self/log', logHandler)
-      router.get('/vessels/self/log', logHandler)
-      router.get(`/vessels/${app.selfId}/log`, logHandler)
+      router.get('/self/signalkboatly/log', logHandler)
+      router.get('/vessels/self/signalkboatly/log', logHandler)
+      router.get(`/vessels/${app.selfId}/signalkboatly/log`, logHandler)
 
       // Queue a recorded passage to be processed by Boatly
-      router.post('/self/process', processHandler)
-      router.post('/vessels/self/process', processHandler)
-      router.post(`/vessels/${app.selfId}/process`, processHandler)
+      router.post('/self/signalkboatly/process', processHandler)
+      router.post('/vessels/self/signalkboatly/process', processHandler)
+      router.post(`/vessels/${app.selfId}/signalkboatly/process`, processHandler)
 
       // Discard a recorded passage
-      router.post('/self/discard', discardHandler)
-      router.post('/vessels/self/discard', discardHandler)
-      router.post(`/vessels/${app.selfId}/discard`, discardHandler)
+      router.post('/self/signalkboatly/discard', discardHandler)
+      router.post('/vessels/self/signalkboatly/discard', discardHandler)
+      router.post(`/vessels/${app.selfId}/signalkboatly/discard`, discardHandler)
 
       // Close a passage, finish recording - so that it can be uploaded or discarded
-      router.post('/self/finish', finishHandler)
-      router.post('/vessels/self/finish', finishHandler)
-      router.post(`/vessels/${app.selfId}/finish`, finishHandler)
+      router.post('/self/signalkboatly/finish', finishHandler)
+      router.post('/vessels/self/signalkboatly/finish', finishHandler)
+      router.post(`/vessels/${app.selfId}/signalkboatly/finish`, finishHandler)
 
       // Get the current status of the recorder
-      router.get('/self/status', statusHandler)
-      router.get('/vessels/self/status', statusHandler)
-      router.get('/self/status', statusHandler)
+      router.get('/self/signalkboatly/status', statusHandler)
+      router.get('/vessels/self/signalkboatly/status', statusHandler)
+      router.get(`/vessels/${app.selfId}/signalkboatly/status`, statusHandler)
 
       // Return the path of the database to which position reports are logged
-      router.get('/self/databasepath', databasePathHandler)
-      router.get('/vessels/self/databasepath', databasePathHandler)
-      router.get('/self/databasepath', databasePathHandler)
+      router.get('/self/signalkboatly/databasepath', databasePathHandler)
+      router.get('/vessels/self/signalkboatly/databasepath', databasePathHandler)
+      router.get(`/vessels/${app.selfId}/signalkboatly/databasepath`, databasePathHandler)
 
       // Download GPX file for a passage
-      router.get('/self/downloadgpx', downloadHandler)
+      router.get('/self/signalkboatly/downloadgpx', downloadHandler)
+      router.get('/vessels/self/signalkboatly/downloadgpx', downloadHandler)
+      router.get(`/vessels/${app.selfId}/signalkboatly/downloadgpx`, downloadHandler)
 
       // Delete completed passages
-      router.post('/self/deletecompleted', deleteCompletedHandler)
-      router.post('/vessels/self/deletecompleted', deleteCompletedHandler)
-      router.post(`/vessels/${app.selfId}/deletecompleted`, deleteCompletedHandler)
+      router.post('/self/signalkboatly/deletecompleted', deleteCompletedHandler)
+      router.post('/vessels/self/signalkboatly/deletecompleted', deleteCompletedHandler)
+      router.post(`/vessels/${app.selfId}/signalkboatly/deletecompleted`, deleteCompletedHandler)
 
       return router
     },
@@ -254,13 +264,13 @@ export default function (app: any) {
 
         updaterate: {
           type: 'number',
-          title: 'Position Update Rate (seconds)',
-          default: 1
+          title: 'Recording rate (seconds)',
+          default: 10
         },
 
         movementmeters: {
           type: 'number',
-          title: 'Distance (meters) vessel must move before logging position report',
+          title: 'Distance (meters) vessel must move before recording a position report',
           default: 10
         },
 
@@ -269,16 +279,61 @@ export default function (app: any) {
           title: 'End the sailing passage when the vessel has been stationary for (minutes):',
           default: 10
         },
-        authtoken: {
-          type: 'string',
-          title: 'Auth Token',
-          default: ''
+
+        authentication: {
+          type: "object",
+          title: "Boatly Login",
+          properties: {
+            email: {
+              type: 'string',
+              title: 'Email',
+              default: ''
+            },
+            password: {
+              type: 'string',
+              title: 'Password',
+              default: ''
+            },
+          }
         }
       }
     }
   }
 
   return plugin
+
+  function loginBoatly(email: string, password: string) {
+    authToken = null
+    userID = null
+
+    const payload = {
+      email: email,
+      password: password
+    }
+
+    const options = {
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    };
+
+    if (email.length > 0 && password.length > 0) {
+      axios.post(`${baseurl}/authenticate`, payload, options)
+        .then((response: any) => {
+          authToken = response.data.JWT
+          userID = response.data.user.user_id
+        })
+        .catch((error: any) => {
+          app.debug(stringify(error))
+          app.debug('Login failed')
+        })
+    }
+  }
+
+  function isLoggedIn(): boolean {
+    if (!authToken || !userID) return false
+    return (authToken.length > 0 && userID.length > 0)
+  }
 
   function removeCompletedPassages() {
     const headers = {
@@ -302,7 +357,7 @@ export default function (app: any) {
 
   function createPositionReportMessage(position: any, sog: number, cog: number, tws: number, twa: number, twd: number, hdop: number) {
     return {
-      time: new Date().getTime(), // TODO use timestamp of incoming position
+      time: new Date().getTime(),
       lat: position !== undefined ? position.latitude : undefined,
       lon: position !== undefined ? position.longitude : undefined,
       sog: sog !== undefined ? Util.mpsToKn(sog) : undefined,
@@ -341,5 +396,40 @@ export default function (app: any) {
 
   function getDBPath(): string {
     return require('path').join(app.getDataDirPath(), 'boatly.db')
+  }
+
+  function startToGPXFilename(start: string): string {
+    return app.getDataDirPath() + '/' + start.replace(/\-/g, '').replace(/\:/g, '').replace(/\./g, '') + '.gpx'
+  }
+
+  function exportToGPX(filename: string, start: string, end: string) {
+    // Retrieve the passage PRs from the database
+    let prs = new Database(dbPath).getPassagePRs(start, end)
+
+    // Write to the GPX file
+    fs.appendFileSync(filename, `<?xml version='1.0'?><gpx version='1.0'><trk><trkseg>`)
+
+    // Create a GPX file and write each row to it
+    prs.forEach(async (row) => {
+      let trckpt = `<trkpt lat='${row.lat}' lon='${row.lon}'><time>${row.time}</time><cog>${row.cog}</cog><sog>${row.sog}</sog>`
+
+      if (row.tws) {
+        trckpt += `<tws>${row.tws}</tws>`
+      }
+
+      if (row.twa) {
+        trckpt += `<twa>${row.twa}</twa>`
+      }
+
+      if (row.twd) {
+        trckpt += `<twd>${row.tws}</twd>`
+      }
+
+      trckpt += `</trkpt>`
+
+      fs.appendFileSync(filename, trckpt)
+    });
+
+    fs.appendFileSync(filename, `</trkseg></trk></gpx>`)
   }
 }

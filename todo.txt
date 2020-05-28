@@ -1,9 +1,3 @@
-API:
-- endpoint to return database path
-- endpoint to download gpx
-- check if Internet connection available before processing
-- test removing internet partway through processing
-- Add Boatly username and password to schema
-- Get UserID from login response
-- Handle login error
-- IsLoggedIn endpoint
+
+
+- npx npm-force-resolutions && npm link && DEBUG=signalk:interfaces:plugins signalk-server --sample-n2k-data

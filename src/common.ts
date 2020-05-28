@@ -18,10 +18,10 @@ export interface IPositionReport {
 export interface IJob {
   start: string,
   end: string,
-  gpxpath: string,
-  gpxfilename: string,
+  gpxFilename: string,
   dbPath: string,
   authToken: string,
+  userID: string,
   status: JobStatus,
   psurl?: string,
   passageid?: string
@@ -48,4 +48,9 @@ export enum PassageStatus {
   GetPSURLFailed = 'getpsurl-failed',
   UploadS3Failed = 'uploads3-failed',
   QueueFailed = 'queue-failed'
+}
+
+export enum ResponseStatus {
+  OK = 'OK',
+  Failed = 'failed'
 }

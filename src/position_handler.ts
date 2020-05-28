@@ -1,5 +1,5 @@
 import { Util } from './util'
-import {Database} from './database'
+import { Database } from './database'
 import { PassageStatus } from './common'
 import { ɵConsole } from '@angular/core'
 
@@ -13,7 +13,7 @@ let passageStartTime: string = null
 interface IStatus {
   status: 'WAITING_INITIAL_POSITION' | 'READY' | 'RECORDING' | 'STOPPED',
   description: string,
-  prs:  number,
+  prs: number,
   stoppedmins: number
 }
 
@@ -56,7 +56,9 @@ export module PositionHandler {
 
   // Called when plugin is stopped
   export function stop() {
-    database.close()
+    if (database) {
+      database.close()
+    }
   }
 
   export function getStatus(): IStatus {
@@ -65,7 +67,7 @@ export module PositionHandler {
 
   function setStatus(value: 'WAITING_INITIAL_POSITION' | 'READY' | 'RECORDING' | 'STOPPED', stoppedMins?: number) {
     let desc = ''
-    let prs= 0
+    let prs = 0
 
     if (value === 'WAITING_INITIAL_POSITION') {
       desc = 'Waiting for initial position report'
@@ -73,14 +75,13 @@ export module PositionHandler {
       desc = 'Ready - Waiting for vessel to move'
     } else if (value === 'RECORDING') {
       desc = 'Vessel is moving and sailing passage is being recorded.'
-      console.log(`passageStartTime: ${passageStartTime}`)
       prs = database.getPositionReportCount(passageStartTime)
     } else if (value === 'STOPPED') {
       desc = 'Vessel is stopped, recording will continue until vessel has been stationary for '
       prs = database.getPositionReportCount(passageStartTime)
     }
 
-    status = {status: value, description: desc, prs: prs, stoppedmins: stoppedMins}
+    status = { status: value, description: desc, prs: prs, stoppedmins: stoppedMins }
 
     app.setProviderStatus(desc)
   }

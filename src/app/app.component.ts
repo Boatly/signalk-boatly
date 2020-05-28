@@ -1,10 +1,6 @@
 import { Component, OnDestroy, OnInit, isDevMode } from '@angular/core';
 import { SignalKClient } from 'signalk-client-angular';
-import { HttpParams, HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
-import { catchError } from 'rxjs/operators';
-import { Observable, of, throwError, concat } from 'rxjs';
-import { map, delay, retryWhen, take, timeout } from 'rxjs/operators';
-import { THIS_EXPR } from '@angular/compiler/src/output/output_ast';
+import { MatSnackBar } from '@angular/material';
 
 @Component({
   selector: 'app-root',
@@ -31,16 +27,18 @@ export class AppComponent implements OnInit, OnDestroy {
   repeat = 0
   passages = null
 
-  authToken = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0YjM2YWZjOC01MjA1LTQ5YzEtYWYxNi00ZGM2Zjk2ZGI5ODIiLCJpc3MiOiJCb2F0bHkuY29tIiwiaWF0IjoxNTgxMzY1NDc4fQ.NmEmiN3OFtALR8BWPM3m6QxjKC6AloXNaoM4jnLfO70'
-
   status = null
+  isLoggedIn = true
   statusTitle = ''
   additionalInfo = null
   DBPath = ''
 
   intervalID
 
-  constructor(private sk: SignalKClient, private http: HttpClient) {
+  noRecordedPassages = true
+  completedPassages = false
+
+  constructor(private sk: SignalKClient, private _snackBar: MatSnackBar) {
     // Construct host for connection
     this.hostName = (this.devMode && this.DEV_SERVER.host) ? this.DEV_SERVER.host : window.location.hostname;
     this.hostPort = (this.devMode && this.DEV_SERVER.port) ? this.DEV_SERVER.port : parseInt(window.location.port);
@@ -49,17 +47,14 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
-    console.log(`HOST: ${this.host}`)
-
-    this.sk.connect(this.hostName, this.hostPort, this.hostSSL).then(r => {
+    this.sk.connect(this.hostName, this.hostPort, this.hostSSL).then(() => {
       this.status = `Connected to SignalK Server ${this.host}`
-      console.log(this.status)
       this.getStatus()
       this.getPassages()
       this.getDBPath()
       this.intervalID = setInterval(() => this.getStatus(), 2000)
     })
-      .catch(e => {
+      .catch(() => {
         this.status = `Failed to connect to SignalK Server ${this.host}`
         console.log(this.status)
       })
@@ -71,16 +66,17 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   getStatus() {
-    this.sk.api.get('self/status').subscribe(
+    this.sk.api.get('self/signalkboatly/status').subscribe(
       (response: any) => {
-        this.status = response
+        this.status = response.status
+        this.isLoggedIn = response.loggedin
         this.decodeStatus()
       }
     )
   }
 
   getDBPath() {
-    this.sk.api.get('self/databasepath').subscribe(
+    this.sk.api.get('self/signalkboatly/databasepath').subscribe(
       (response: any) => {
         this.DBPath = response.path
         this.decodeStatus()
@@ -125,14 +121,15 @@ export class AppComponent implements OnInit, OnDestroy {
       this.timeoutID = null
     }
 
-    this.sk.api.get('vessels/self/log').subscribe(
+    this.sk.api.get('vessels/self/signalkboatly/log').subscribe(
       (response: any) => {
         this.passages = response
 
+        this.noRecordedPassages = (this.passages.filter(passage => (passage.status !== 'recording')).length === 0)
+        this.completedPassages = (this.passages.filter(passage => (passage.status === 'processed')).length > 0)
+
         if (this.passages.filter(passage => (passage.status === 'processing')).length > 0) {
-          console.log('NEED TO CALL AGAIN!')
           this.timeoutID = setTimeout(this.getPassages.bind(this), 5000)
-          console.log("Callliing a gain")
         }
       },
       error => {
@@ -141,23 +138,30 @@ export class AppComponent implements OnInit, OnDestroy {
     );
   }
 
+  downloadGPX(passage: any) {
+    window.location.href = `${this.host}/signalk/v1/api/vessels/self/signalkboatly/downloadgpx?start=${passage.start}&end=${passage.end}`;
+  }
+
   processPassage(passage: any) {
-    this.sk.api.post('vessels/self/process', { start: passage.start, end: passage.end }).subscribe(
-      (response: any) => {
-        console.log(response.status)
-        passage.status = response.status
-        this.getPassages()
-      },
-      error => {
-        console.log(error)
-      }
-    )
+    if (this.isLoggedIn) {
+      this.sk.api.post('vessels/self/signalkboatly/process', { start: passage.start, end: passage.end }).subscribe(
+        (response: any) => {
+          passage.status = response.status
+          this.getPassages()
+        },
+        error => {
+          console.log(error)
+        }
+      )
+    }
+    else {
+      this._snackBar.open("Please authenticate with Boatly first", '', { duration: 2000 });
+    }
   }
 
   discardPassage(passage: any) {
-    this.sk.api.post('vessels/self/discard', { start: passage.start, end: passage.end }).subscribe(
+    this.sk.api.post('vessels/self/signalkboatly/discard', { start: passage.start, end: passage.end }).subscribe(
       (response: any) => {
-        console.log(response.status)
         passage.status = response.status
         this.getPassages()
       },
@@ -168,12 +172,9 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   finishPassage() {
-    this.sk.api.post('vessels/self/finish', {}).subscribe(
-      (response: any) => {
+    this.sk.api.post('vessels/self/signalkboatly/finish', {}).subscribe(
+      () => {
         this.getPassages()
-        // console.log(response.status)
-        // passage.end = new Date().toISOString()
-        // passage.status = response.status
       },
       error => {
         console.log(error)
@@ -186,11 +187,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
     this.deleting = true
 
-    this.sk.api.post('vessels/self/deletecompleted', {}).subscribe(
-      (response: any) => {
+    this.sk.api.post('vessels/self/signalkboatly/deletecompleted', {}).subscribe(
+      () => {
         this.getPassages()
         this.deleting = false
-        console.log('Calling delete completed')
       },
       error => {
         console.log(error)
@@ -199,39 +199,28 @@ export class AppComponent implements OnInit, OnDestroy {
     )
   }
 
-  getS3SignedURLForImport(fileName: string) {
+  getFailedText(status: string) {
+    switch (status) {
+      case 'creategpx-failed':
+        return 'Failed to create GPX file'
+        break;
 
-    const httpOptions = {
-      headers: new HttpHeaders({ 'Authorization': this.authToken }),
-      params: new HttpParams().set('file-name', fileName)
-    };
+      case 'getpsurl-failed':
+        return 'Failed to get pre-signed URL'
+        break;
 
-    return this.http.get(`https://boatly-api.herokuapp.com/v1/s3/signimport`, httpOptions).pipe(
-      catchError(this.handleError)
-    );
+      case 'uploads3-failed':
+        return 'Failed to upload GPX file'
+        break;
+
+      case 'queue-failed':
+        return 'Failed to queue passage for import with Boatly server'
+        break;
+
+      default:
+        return 'Failed'
+        break;
+    }
   }
 
-  private handleError(error: HttpErrorResponse) {
-    let msg = 'Oops! Something went wrong!  We\'ve recorded the problem and will look into it.';
-
-    if (error.error instanceof ErrorEvent) {
-      // A client-side or network error occurred. Handle it accordingly.
-      console.error('An error occurred:', error.error.message);
-    } else {
-      // The backend returned an unsuccessful response code.
-      // The response body may contain clues as to what went wrong,
-
-      if (error.status === 0) {
-        // Could not connect to the server, it may be down.  Tell the user to try again.
-        msg = 'There seems to be a temporary problem, please try again.';
-      }
-
-      console.error(
-        `Backend returned code ${error.status}, ` +
-        `body was: ${error.error}`);
-    }
-
-    // return an ErrorObservable with a user-facing error message
-    return throwError(msg);
-  };
 }

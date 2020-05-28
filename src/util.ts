@@ -29,4 +29,5 @@ export module Util {
 
         return earthRadius * c;
     }
+
 }

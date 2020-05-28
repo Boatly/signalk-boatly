@@ -13,6 +13,7 @@ import {MatProgressSpinnerModule} from '@angular/material/progress-spinner';
 import {MatChipsModule} from '@angular/material/chips'
 import {MatCardModule} from '@angular/material/card';
 import {MatDividerModule} from '@angular/material/divider';
+import {MatSnackBarModule} from '@angular/material/snack-bar';
 
 import { SignalKClientModule } from 'signalk-client-angular';
 
@@ -32,6 +33,7 @@ import { SignalKClientModule } from 'signalk-client-angular';
     MatChipsModule,
     MatCardModule,
     MatDividerModule,
+    MatSnackBarModule,
     SignalKClientModule,
   ],
   providers: [],

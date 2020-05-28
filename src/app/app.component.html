@@ -26,15 +26,25 @@
   </mat-card>
 
   <mat-card style="margin-top: 15px;">
-    <mat-card-title>Recorded Passages</mat-card-title>
+    <mat-card-title>
+      Recorded Passages <span *ngIf="completedPassages" style="float: right;"><button (disabled)='deleting'
+          mat-raised-button color="primary" (click)="deleteCompleted()">Delete completed passages</button></span>
+    </mat-card-title>
 
-    <div *ngIf="passages && passages.length == 0">
+    <div *ngIf="! isLoggedIn">
+      <p class="notLoggedIn">You're not logged in</p>
+      <p>You must be authenticated with Boatly before you can upload sailing passages.</p>
+      <p>Enter your Boatly login details in the plugin's <a
+          href="{{host}}/admin/#/serverConfiguration/plugins/signalk-boatly">configuration settings in the SignalK
+          server</a> admin application.</p>
+    </div>
+
+    <div *ngIf="noRecordedPassages">
       There are no recorded passages to upload.
     </div>
   </mat-card>
 
-  <div *ngIf="passages && passages.length > 0">
-
+  <div>
 
     <div *ngFor="let passage of passages">
 
@@ -42,10 +52,12 @@
         <mat-card-subtitle>{{ passage.start | date : 'MMMM d HH:mm'}} to {{passage.end | date : 'MMMM d HH:mm'}}
         </mat-card-subtitle>
 
-        <div *ngIf="passage.status == 'processed'" class="status">Completed</div>
-        <div *ngIf="passage.status == 'processing'" class="status">Processing</div>
-        <div *ngIf="passage.status.includes('failed')" class="status">Failed</div>
-
+        <div style="margin-bottom: 20px;">
+          <div *ngIf="passage.status == 'completed'" class="status">Ready for upload to Boatly</div>
+          <div *ngIf="passage.status == 'processed'" class="status">Completed</div>
+          <div *ngIf="passage.status == 'processing'" class="status">Processing</div>
+          <div *ngIf="passage.status.includes('failed')" class="status">{{getFailedText(passage.status)}}</div>
+        </div>
         <button *ngIf="passage.status == 'completed'" mat-raised-button (click)="processPassage(passage)">
           Upload
         </button>
@@ -61,52 +73,11 @@
           Discard
         </button>
 
-        <button mat-raised-button color="accent">Download GPX file</button>
+        <button mat-raised-button color="accent" (click)="downloadGPX(passage)">Download GPX file</button>
 
       </mat-card>
 
-      <!--
-          <mat-list-item *ngIf="passage.status != 'recording'">
-            <div style="margin-right: 20px">{{ passage.start | date : 'MMMM d HH:mm'}} to
-              {{passage.end | date : 'MMMM d HH:mm'}}</div>
-
-            <mat-chip-list *ngIf="passage.status == 'Uploading' || passage.status == 'Queued'">
-              <mat-chip color="primary" selected>{{passage.status}}</mat-chip>
-            </mat-chip-list>
-
-            <mat-chip-list *ngIf="passage.status.includes('- failed')">
-              <mat-chip color="warn" selected>Failed </mat-chip>
-            </mat-chip-list>
-
-            <mat-chip-list *ngIf="passage.status == 'processed'">
-              <mat-chip color="accent" selected>Completed</mat-chip>
-            </mat-chip-list>
-
-            <button *ngIf="passage.status == 'completed'" mat-raised-button (click)="processPassage(passage)">
-              Upload
-            </button>
-
-            <button *ngIf="passage.status.includes('- failed')" style="margin-left: 10px" mat-raised-button
-              (click)="processPassage(passage)">
-              Retry
-            </button>
-
-            <button *ngIf="passage.status == 'completed' || passage.status == 'Failed'" style="margin-left: 10px"
-              mat-raised-button color="warn" (click)="discardPassage(passage)">
-              Discard
-            </button>
-
-            <button mat-button style="margin-left: 10px">Download GPX file</button>
-
-            <mat-divider></mat-divider>
-
-          </mat-list-item>
-          -->
     </div>
-
-
-    <button (disabled)='deleting' mat-raised-button color="primary" style="margin-top: 20px; margin-bottom: 20px"
-      (click)="deleteCompleted()">Delete completed passages</button>
 
   </div>
 

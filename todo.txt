@@ -1,3 +1,0 @@
-
-
-- npx npm-force-resolutions && npm link && DEBUG=signalk:interfaces:plugins signalk-server --sample-n2k-data

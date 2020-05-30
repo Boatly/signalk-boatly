@@ -2,7 +2,7 @@
   "compileOnSave": false,
   "compilerOptions": {
     "baseUrl": "./",
-    "rootDir": "src",
+    // "rootDir": "src",
     "outDir": "./dist",
     "sourceMap": true,
     "declaration": false,

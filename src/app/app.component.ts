@@ -44,20 +44,25 @@ export class AppComponent implements OnInit, OnDestroy {
     this.hostPort = (this.devMode && this.DEV_SERVER.port) ? this.DEV_SERVER.port : parseInt(window.location.port);
     this.hostSSL = (window.location.protocol == 'https:' || (this.devMode && this.DEV_SERVER.ssl)) ? true : false;
     this.host = (this.devMode) ? `${this.hostSSL ? 'https:' : 'http:'}//${this.hostName}:${this.hostPort}` : `${window.location.protocol}//${window.location.host}`;
+
+    this.devMode ? console.log('** Starting in Development Mode **') : console.log('** Starting in Production Mode **')
   }
 
   ngOnInit() {
-    this.sk.connect(this.hostName, this.hostPort, this.hostSSL).then(() => {
-      this.status = `Connected to SignalK Server ${this.host}`
-      this.getStatus()
-      this.getPassages()
-      this.getDBPath()
-      this.intervalID = setInterval(() => this.getStatus(), 2000)
-    })
-      .catch(() => {
+    this.sk.connect(this.hostName, this.hostPort, this.hostSSL).subscribe(
+      (res) => {
+        this.status = `Connected to SignalK Server ${this.host}`
+        this.getStatus()
+        this.getPassages()
+        this.getDBPath()
+        this.intervalID = setInterval(() => this.getStatus(), 2000)
+      },
+
+      (error) => {
         this.status = `Failed to connect to SignalK Server ${this.host}`
         console.log(this.status)
-      })
+      }
+    )
   }
 
   ngOnDestroy() {

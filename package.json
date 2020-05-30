@@ -1,6 +1,6 @@
 {
   "name": "signalk-boatly",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A plugin that records sailing passages and uploads them to Boatly - https://wwww.boatly.com",
   "license": "ISC",
   "main": "index.js",
@@ -14,7 +14,7 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
-    "build": "tsc && ng build",
+    "build": "tsc && ng build --prod",
     "prepare": "tsc && ng build",
     "test": "ng test",
     "lint": "ng lint",
@@ -44,6 +44,9 @@
     "zone.js": "~0.9.1"
   },
   "devDependencies": {
+    "@babel/compat-data": "^7.8.0",
+    "@babel/preset-env": "^7.8.0",
+    "babel-loader": "^8.1.0",
     "@angular-devkit/build-angular": "^0.803.24",
     "@angular/cli": "~8.3.23",
     "@angular/compiler-cli": "~8.2.14",
@@ -67,6 +70,6 @@
     "typescript": "~3.5.3"
   },
   "resolutions": {
-    "@babel/preset-env": "7.5.5"
+    "@babel/preset-env": "^7.8.0"
   }
 }

@@ -40,6 +40,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   constructor(private sk: SignalKClient, private _snackBar: MatSnackBar) {
     // Construct host for connection
+    this.devMode = false
     this.hostName = (this.devMode && this.DEV_SERVER.host) ? this.DEV_SERVER.host : window.location.hostname;
     this.hostPort = (this.devMode && this.DEV_SERVER.port) ? this.DEV_SERVER.port : parseInt(window.location.port);
     this.hostSSL = (window.location.protocol == 'https:' || (this.devMode && this.DEV_SERVER.ssl)) ? true : false;

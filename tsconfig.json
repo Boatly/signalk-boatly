@@ -20,15 +20,6 @@
       "dom"
     ]
   },
-  "exclude": [
-    "src/app",
-    "src/environments",
-    "src/main.ts",
-    "src/polyfills.ts",
-    "src/styles.scss",
-    "src/favicon.ico",
-    "src/index.html"
-  ],
   "angularCompilerOptions": {
     "fullTemplateTypeCheck": true,
     "strictInjectionParameters": true

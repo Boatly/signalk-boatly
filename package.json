@@ -1,6 +1,6 @@
 {
   "name": "signalk-boatly",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "A plugin that records sailing passages and uploads them to Boatly - https://wwww.boatly.com",
   "license": "ISC",
   "main": "index.js",
@@ -15,7 +15,7 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "tsc",
-    "prepare": "tsc && ng build --prod",
+    "prepare": "tsc",
     "test": "ng test",
     "lint": "ng lint",
     "e2e": "ng e2e"

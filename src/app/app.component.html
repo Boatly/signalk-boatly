@@ -4,23 +4,26 @@
 
 <div class="container">
 
-  <mat-card id="parent" style="min-height: 178px;">
+  <mat-card id="parent" style="min-height: 188px;">
     <mat-card-header>
       <mat-card-title>{{statusTitle}}</mat-card-title>
-      <mat-card-subtitle>{{status.description}}</mat-card-subtitle>
+      <mat-card-subtitle style="margin-bottom: 15px;">{{statusSubtitle}}</mat-card-subtitle>
     </mat-card-header>
+
+    <div style="padding-bottom: 10px;">
+      <mat-divider></mat-divider>
+    </div>
 
     <mat-card-content class="ml">
       <p>{{additionalInfo}}</p>
     </mat-card-content>
 
-    <mat-card-actions class="ml" *ngIf="(status.status == 'RECORDING') || (status.status == 'STOPPED')">
+    <mat-card-actions class="ml" style="margin-top: 0px; padding-top: 0px;" *ngIf="(statusResponse.status == 'RECORDING') || (statusResponse.status == 'STOPPED')">
       <button mat-raised-button color="primary" (click)="finishPassage()">Finish</button>
     </mat-card-actions>
 
-    <mat-divider></mat-divider>
-
     <mat-card-footer id="child" class="ml">
+      <mat-card-subtitle style="margin-bottom: 8px;">SignalK server: {{host}}</mat-card-subtitle>
       <mat-card-subtitle>Database path: {{DBPath}}</mat-card-subtitle>
     </mat-card-footer>
   </mat-card>

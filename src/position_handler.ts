@@ -1,7 +1,6 @@
 import { Util } from './util'
 import { Database } from './database'
 import { PassageStatus } from './common'
-import { ɵConsole } from '@angular/core'
 
 // Used to determine if the boating is moving or stationary
 let underway = false
@@ -44,11 +43,13 @@ export module PositionHandler {
     passageStartTime = database.getPassageStart()
 
     if (passageStartTime) {
-      app.debug(`Existing passage found: ${passageStartTime}`)
       lastPositionReport = getLastPR()
-      app.debug(`Last position report loaded: ${JSON.stringify(lastPositionReport)}`)
       setStatus('READY')
+      app.debug(`** Status set to READY **`)
+      app.debug(`Existing passage found: ${passageStartTime}`)
+      app.debug(`Last position report loaded: ${JSON.stringify(lastPositionReport)}`)
     } else {
+      app.debug(`** Status set to WAITING_INITIAL_POSITION - no existing recording passage found **`)
       setStatus('WAITING_INITIAL_POSITION')
     }
 
@@ -116,13 +117,14 @@ export module PositionHandler {
       if (distanceMoved >= movementmeters) {
         // The vessel has started moving if this is the first PR received since initial PR
         setStatus('RECORDING')
-        app.debug(`Movement detected - started recording at ${new Date(pr.time).toISOString()}`)
         underway = true
+
+        app.debug(`Movement detected - started recording at ${new Date(pr.time).toISOString()}`)
       } else if (!lastPositionReport) {
         // Latch in first position report which is the base reference for the start of the passage
         setStatus('READY')
-        app.debug(`Initial Position Determined: ${pr.lat, pr.lon}`)
         lastPositionReport = pr
+        app.debug(`Initial Position Determined: ${pr.lat, pr.lon}`)
         return
       } else {
         // Vessel still stopped at the same position - wait until it moves

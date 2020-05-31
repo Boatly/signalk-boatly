@@ -2,6 +2,13 @@ import { Component, OnDestroy, OnInit, isDevMode } from '@angular/core';
 import { SignalKClient } from 'signalk-client-angular';
 import { MatSnackBar } from '@angular/material';
 
+interface IStatus {
+  status: string,
+  description: string,
+  prs: number,
+  stoppedmins: number
+}
+
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
@@ -23,14 +30,16 @@ export class AppComponent implements OnInit, OnDestroy {
   deleting = false
   timeoutID
 
-  title = 'signalk-boatly';
-  repeat = 0
   passages = null
 
-  status = null
+  statusResponse: IStatus = null
+
   isLoggedIn = true
+
   statusTitle = ''
+  statusSubtitle = ''
   additionalInfo = null
+
   DBPath = ''
 
   intervalID
@@ -40,7 +49,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   constructor(private sk: SignalKClient, private _snackBar: MatSnackBar) {
     // Construct host for connection
-    this.devMode = false
+    this.devMode = false // HACK: TODO: hardcoding for now as not working when published to npm
     this.hostName = (this.devMode && this.DEV_SERVER.host) ? this.DEV_SERVER.host : window.location.hostname;
     this.hostPort = (this.devMode && this.DEV_SERVER.port) ? this.DEV_SERVER.port : parseInt(window.location.port);
     this.hostSSL = (window.location.protocol == 'https:' || (this.devMode && this.DEV_SERVER.ssl)) ? true : false;
@@ -50,18 +59,21 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
+    this.statusResponse = {status: 'CONNECTSIGNALK', description: '', prs: 0, stoppedmins: 0}
+    this.decodeStatus()
+
     this.sk.connect(this.hostName, this.hostPort, this.hostSSL).subscribe(
       (res) => {
-        this.status = `Connected to SignalK Server ${this.host}`
-        this.getStatus()
+        this.statusTitle = `Connected to SignalK Server ${this.host}`
+        // this.getStatus()
         this.getPassages()
         this.getDBPath()
         this.intervalID = setInterval(() => this.getStatus(), 2000)
       },
 
       (error) => {
-        this.status = `Failed to connect to SignalK Server ${this.host}`
-        console.log(this.status)
+        this.statusResponse = {status: 'FAILEDCONNECTSIGNALK',description: `${error.message}`, prs: 0, stoppedmins: 0}
+        this.decodeStatus()
       }
     )
   }
@@ -74,7 +86,7 @@ export class AppComponent implements OnInit, OnDestroy {
   getStatus() {
     this.sk.api.get('self/signalkboatly/status').subscribe(
       (response: any) => {
-        this.status = response.status
+        this.statusResponse = response.status
         this.isLoggedIn = response.loggedin
         this.decodeStatus()
       }
@@ -91,27 +103,41 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   decodeStatus() {
-    switch (this.status.status) {
+    this.statusSubtitle = this.statusResponse.description
+
+    switch (this.statusResponse.status) {
+
+      case 'CONNECTSIGNALK':
+        this.statusTitle = 'Connecting to SignalK Server'
+        this.statusSubtitle = 'Establishing a connection to your SignalK server'
+        this.additionalInfo = `Connecting to host: ${this.host}`
+        break;
+
+      case 'FAILEDCONNECTSIGNALK':
+        this.statusTitle = `Failed to connect to SignalK`
+        this.statusSubtitle = `Failed to connect to SignalK Server ${this.host}`
+        this.additionalInfo = this.statusResponse.description
+        break;
 
       case 'RECORDING':
         this.statusTitle = 'Recording'
-        this.additionalInfo = `${this.status.prs} positions recorded`
+        this.additionalInfo = `${this.statusResponse.prs} positions recorded`
         break;
 
       case 'WAITING_INITIAL_POSITION':
-        this.statusTitle = 'Waiting'
-        this.additionalInfo = null
+        this.statusTitle = 'Connected - Waiting'
+        this.additionalInfo = 'A connection to your SignalK server has been established.  Boatly Passage logger is waiting for a position report from your GPS.'
         break;
 
       case 'READY':
         this.statusTitle = 'Ready'
-        this.additionalInfo = null
+        this.additionalInfo = 'Recording will start when your vessels starts to move.'
         break;
 
       case 'STOPPED':
         this.statusTitle = 'Vessel Stopped'
-        const minutes = Math.floor(this.status.stoppedmins)
-        const seconds = Math.round(this.status.stoppedmins % 1 * 60);
+        const minutes = Math.floor(this.statusResponse.stoppedmins)
+        const seconds = Math.round(this.statusResponse.stoppedmins % 1 * 60);
         this.additionalInfo = `Stopped for ${minutes} minute(s) ${seconds} seconds`
         break;
 
@@ -131,6 +157,8 @@ export class AppComponent implements OnInit, OnDestroy {
       (response: any) => {
         this.passages = response
 
+        // Handle edge case where passage status is not in list of know statuses (happens when API was updated to new status values)
+        this.handleUnknownStatuses()
         this.noRecordedPassages = (this.passages.filter(passage => (passage.status !== 'recording')).length === 0)
         this.completedPassages = (this.passages.filter(passage => (passage.status === 'processed')).length > 0)
 
@@ -139,9 +167,18 @@ export class AppComponent implements OnInit, OnDestroy {
         }
       },
       error => {
-        console.log(error)
+        console.log(`** Failed vessels/self/signalkboatly/log :  ${JSON.stringify(error)}`)
       }
     );
+  }
+
+  handleUnknownStatuses() {
+    for (let passage of this.passages) {
+      console.log(passage.status)
+      if (passage.status !== 'recording' && passage.status !== 'completed' && passage.status !== 'processing' && passage.status != 'processed') {
+        passage.status = 'completed'
+      }
+    }
   }
 
   downloadGPX(passage: any) {
@@ -172,7 +209,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.getPassages()
       },
       error => {
-        console.log(error)
+        console.log(`** Failed vessels/self/signalkboatly/discard: ${JSON.stringify(error)}`)
       }
     )
   }
@@ -183,7 +220,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.getPassages()
       },
       error => {
-        console.log(error)
+        console.log(`** Failed vessels/self/signalkboatly/finish: ${JSON.stringify(error)}`)
       }
     )
   }
@@ -199,7 +236,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.deleting = false
       },
       error => {
-        console.log(error)
+        console.log(`** Failed vessels/self/signalkboatly/deletecompleted: ${JSON.stringify(error)}`)
         this.deleting = false
       }
     )

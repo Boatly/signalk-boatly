@@ -6,6 +6,7 @@ import { AppModule } from './app/app.module';
 import { environment } from './environments/environment';
 
 // if (environment.production) {
+  // HACK: TODO: hardcoding for now as not working when published to npm
   enableProdMode();
 //}
 
